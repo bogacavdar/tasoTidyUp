@@ -125,9 +125,11 @@ var cam: Camera3D
 var hand_root: Node3D
 var taso_mesh: CylinderMesh
 var taso_mat: ShaderMaterial
-var pile_mm: MultiMesh
-var shelf_mm: MultiMesh
-var hand_mm: MultiMesh
+var taso_mats: Array = []             # set başına malzeme (setin canlı atlası)
+var pile_mms: Array = []              # set başına: yerdeki tasolar (örnek = numara - 1)
+var shelf_mms: Array = []             # set başına: vitrine konmuş tasolar (örnek = numara - 1)
+var hand_mms: Array = []              # set başına: eldeki tasolar
+var hand_used: Array = []
 var holo_mm: MultiMesh
 var holo_mmi: MultiMeshInstance3D
 var holo_ring_mat: StandardMaterial3D
@@ -279,6 +281,14 @@ func _make_taso_material() -> void:
 	taso_mat.set_shader_parameter("nper", float(NUMBERS_PER_SET))
 	taso_mat.set_shader_parameter("rows", float(atlas_rows))
 	taso_mat.set_shader_parameter("radius", TASO_R)
+	# her set için kendi canlı atlasıyla bir malzeme
+	for g in set_count:
+		var m: ShaderMaterial = taso_mat.duplicate()
+		var path := "res://assets/art/set_%02d.jpg" % g
+		if ResourceLoader.exists(path):
+			m.set_shader_parameter("art", load(path))
+			m.set_shader_parameter("has_art", true)
+		taso_mats.append(m)
 
 
 func _tex(id: String, kind: String) -> Texture2D:
@@ -338,6 +348,21 @@ func _make_env_materials() -> void:
 	sky_mat = StandardMaterial3D.new()
 	sky_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	sky_mat.albedo_color = Color("cfe9ff")
+
+
+## Her set için bir MultiMesh + kendi malzemesi; örnek indeksi = numara - 1
+func _set_mms(parent: Node, count: int) -> Array:
+	var out: Array = []
+	for g in set_count:
+		var mm := _new_mm(count)
+		for k in count:
+			mm.set_instance_transform(k, hidden_xf)
+		var mmi := MultiMeshInstance3D.new()
+		mmi.multimesh = mm
+		mmi.material_override = taso_mats[g]
+		parent.add_child(mmi)
+		out.append(mm)
+	return out
 
 
 func _new_mm(count: int) -> MultiMesh:
@@ -584,11 +609,7 @@ func _build_world() -> void:
 	lip_mmi.material_override = mat_wood_fine
 	add_child(lip_mmi)
 
-	shelf_mm = _new_mm(total)
-	var shelf_mmi := MultiMeshInstance3D.new()
-	shelf_mmi.multimesh = shelf_mm
-	shelf_mmi.material_override = taso_mat
-	add_child(shelf_mmi)
+	shelf_mms = _set_mms(self, NUMBERS_PER_SET)
 
 	# --- Vitrin yerleşimi ---
 	var placements := _vitrine_placements()
@@ -812,7 +833,6 @@ func _build_vitrine(g: int, pos: Vector3, rot: float) -> void:
 		ring_mm.set_instance_transform(g * NUMBERS_PER_SET + n, shelf.global_transform * Transform3D(Basis(Vector3.RIGHT, PI / 2), sp + Vector3(0, 0, 0.002)))
 		ring_mm.set_instance_color(g * NUMBERS_PER_SET + n, RING_EMPTY)
 		row_slots.append(-1)
-		shelf_mm.set_instance_transform(g * NUMBERS_PER_SET + n, hidden_xf)
 	slots.append(row_slots)
 	shelf_done.append(false)
 	set_bonus_paid.append(false)
@@ -864,12 +884,9 @@ func _build_player() -> void:
 	hand_root.position = Vector3(0.3, -0.28, -0.55)
 	hand_root.rotation = Vector3(1.15, -0.25, 0)
 	cam.add_child(hand_root)
-	hand_mm = _new_mm(AVUC_CAP[AVUC_CAP.size() - 1])
-	hand_mm.visible_instance_count = 0
-	var hmi := MultiMeshInstance3D.new()
-	hmi.multimesh = hand_mm
-	hmi.material_override = taso_mat
-	hand_root.add_child(hmi)
+	hand_mms = _set_mms(hand_root, AVUC_CAP[AVUC_CAP.size() - 1])
+	for g in set_count:
+		hand_used.append(0)
 	add_child(player)
 
 
@@ -928,15 +945,17 @@ func _floor_blocked(p: Vector3) -> bool:
 
 
 func _build_pile() -> void:
-	pile_mm = _new_mm(tasos.size())
-	var mmi := MultiMeshInstance3D.new()
-	mmi.multimesh = pile_mm
-	mmi.material_override = taso_mat
-	add_child(mmi)
+	pile_mms = _set_mms(self, NUMBERS_PER_SET)
 	for i in tasos.size():
-		pile_mm.set_instance_transform(i, pile_xf[i])
-		pile_mm.set_instance_custom_data(i, _custom(i))
-	_recolor_pile()
+		var t: Dictionary = tasos[i]
+		var mm: MultiMesh = pile_mms[t["grp"]]
+		var k: int = t["num"] - 1
+		mm.set_instance_transform(k, pile_xf[i])
+		mm.set_instance_custom_data(k, _custom(i))
+		mm.set_instance_color(k, _taso_color(i))
+		var smm: MultiMesh = shelf_mms[t["grp"]]
+		smm.set_instance_custom_data(k, _custom(i))
+		smm.set_instance_color(k, _taso_color(i))
 
 	# Holo dedektörü halkaları: derinlik testi yok, yığının içinden görünür
 	var torus := TorusMesh.new()
@@ -970,9 +989,10 @@ func _taso_color(i: int) -> Color:
 	return _set_color(tasos[i]["grp"])
 
 
-func _recolor_pile() -> void:
-	for i in tasos.size():
-		pile_mm.set_instance_color(i, _taso_color(i))
+func _pile_xf(i: int, xf: Transform3D) -> void:
+	var t: Dictionary = tasos[i]
+	var mm: MultiMesh = pile_mms[t["grp"]]
+	mm.set_instance_transform(int(t["num"]) - 1, xf)
 
 
 func _refresh_holo() -> void:
@@ -1003,7 +1023,7 @@ func _take(i: int) -> void:
 	_grid_remove(i)
 	in_pile[i] = false
 	pile_count -= 1
-	pile_mm.set_instance_transform(i, hidden_xf)
+	_pile_xf(i, hidden_xf)
 	hand.append(i)
 
 
@@ -1011,7 +1031,7 @@ func _put_in_pile(i: int, xf: Transform3D) -> void:
 	pile_xf[i] = xf
 	in_pile[i] = true
 	pile_count += 1
-	pile_mm.set_instance_transform(i, xf)
+	_pile_xf(i, xf)
 	_grid_add(i)
 
 
@@ -1357,10 +1377,8 @@ func _place(i: int, g: int, n: int) -> void:
 	slots[g][n] = i
 	placed += 1
 	var shelf: Node3D = shelves[g]
-	var mi := g * NUMBERS_PER_SET + n
-	shelf_mm.set_instance_transform(mi, shelf.global_transform * Transform3D(Basis(Vector3.RIGHT, PI / 2), _slot_local(n) + Vector3(0, 0, 0.009)))
-	shelf_mm.set_instance_color(mi, _set_color(t["grp"]))
-	shelf_mm.set_instance_custom_data(mi, _custom(i))
+	var smm: MultiMesh = shelf_mms[t["grp"]]
+	smm.set_instance_transform(int(t["num"]) - 1, shelf.global_transform * Transform3D(Basis(Vector3.RIGHT, PI / 2), _slot_local(n) + Vector3(0, 0, 0.009)))
 	if _is_correct(g, n):
 		correct += 1
 		_play(snd_holo if t["holo"] else snd_correct)
@@ -1379,7 +1397,9 @@ func _unplace(g: int, n: int) -> int:
 		correct -= 1
 	slots[g][n] = -1
 	placed -= 1
-	shelf_mm.set_instance_transform(g * NUMBERS_PER_SET + n, hidden_xf)
+	var t: Dictionary = tasos[i]
+	var smm: MultiMesh = shelf_mms[t["grp"]]
+	smm.set_instance_transform(int(t["num"]) - 1, hidden_xf)
 	_check_shelf(g)
 	_refresh_ring(g, n)
 	return i
@@ -1447,7 +1467,13 @@ func _drop(only_selected: bool) -> void:
 
 ## Seçili taso önde ve büyük, diğerleri arkasında yelpaze gibi.
 func _rebuild_hand() -> void:
-	hand_mm.visible_instance_count = hand.size()
+	# önceki el görüntüsünü gizle
+	for g in set_count:
+		var used: int = hand_used[g]
+		var mm0: MultiMesh = hand_mms[g]
+		for j in used:
+			mm0.set_instance_transform(j, hidden_xf)
+		hand_used[g] = 0
 	var cnt := hand.size()
 	for k in cnt:
 		var i: int = hand[k]
@@ -1462,9 +1488,13 @@ func _rebuild_hand() -> void:
 			if a > 8:
 				pos = Vector3(side * 0.24, -0.04, -0.09)
 			xf = Transform3D(Basis(Vector3.FORWARD, -side * 0.08 * a).scaled(Vector3.ONE * 0.85), pos)
-		hand_mm.set_instance_transform(k, xf)
-		hand_mm.set_instance_color(k, _taso_color(i))
-		hand_mm.set_instance_custom_data(k, _custom(i))
+		var g: int = tasos[i]["grp"]
+		var mm: MultiMesh = hand_mms[g]
+		var j: int = hand_used[g]
+		hand_used[g] = j + 1
+		mm.set_instance_transform(j, xf)
+		mm.set_instance_color(j, _taso_color(i))
+		mm.set_instance_custom_data(j, _custom(i))
 
 
 func _try_buy(key: String) -> void:

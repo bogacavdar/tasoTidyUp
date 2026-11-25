@@ -12,8 +12,8 @@ Godot ile yapılan bir "kaostan düzene" toplu dizme oyunu. Oyuncu birinci şah�
   - Sol ve sağ duvarlarda 6'şar, ortada 4 çift taraflı stand (8), ön duvarda 4, asma katta 10.
   - Her vitrinde yan panolar, üst kapak, alt dolap, her sırada raf çıtası, cam ön yüz, LED şerit ve set renginde başlık var.
   - 10 sütun × 15 satır yuva.
-- **Taso çizimleri:** 34 setin her birinde temaya uygun çizimler var, her biri taso numarasından türetiliyor. Hepsi kodla, ekran kartında çiziliyor (`taso.gdshader`). Motifler: yaratık, balık, çiçek/mercan, kristal, gök cismi, mantar, kuş/yarasa, manzara, böcek. Setler gece, pastel ve taş/metalik gibi renk havalarına ayrılıyor.
-- **5100 benzersiz taso:** 34 set × 150 numara, her setin kendine ait belirgin bir rengi var. İki katın zeminine rastgele saçılmış.
+- **Canlılar:** Her sette 50 tür ve her türün 3 evrimi var (50 × 3 = 150). Numaralar Pokédex gibi sıralı: 1-2-3 ilk türün evrimleri. Türler setin konseptine uygun vücut planlarından üretiliyor: dört ayaklı, iki ayaklı, yılan, kuş, balık, böcek, ahtapot/denizanası/kalamar, hayalet, bitki, golem, yengeç/ıstakoz, balçık. Her planın alt formları var. Resimler `tools/gen_creatures.py` ile üretilip `assets/art/set_XX.jpg` atlaslarına yazılıyor.
+- **5100 benzersiz taso:** 34 set × 150 numara (50 tür × 3 evrim), her setin kendine ait belirgin bir rengi var. İki katın zeminine rastgele saçılmış.
 - **Yuvalar:** Koyu ahşap panoda krem halkalar. Baktığın yuvanın etrafında sarı bir halka çıkar.
 - **Dizme:** Her taso her yuvaya konabilir, sırayı oyuncu kurar. Doğru sıra soldan sağa, yukarıdan aşağı 1-150.
   - Yanlış yerdeki taso kırmızı halkayla gösterilir.
