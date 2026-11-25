@@ -2,12 +2,12 @@
 
 Godot ile yapılan bir "kaostan düzene" toplu dizme oyunu. Oyuncu birinci şahıs bakışla, yere yığılmış binlerce tasoyu setlerine ve numaralarına göre vitrinlere diziyor, kazandığı jetonlarla yetenek açıyor ve hızlanıyor.
 
-## Şu anki durum: Aşama 2, dev depo ve 5000 benzersiz taso
+## Şu anki durum: Aşama 2, dev depo ve 5100 benzersiz taso
 
 - 60×50 m'lik depo. 11 kaotik yığın ve yere saçılmış tasolar.
-- **5000 benzersiz taso:** 25 set × 200 numara, kopya yok. Yaklaşık %4'ü holo.
-- Her setin duvarda bir vitrini var (20 × 10 yuva), toplam 25 vitrin.
-- Yuvalarda numara yazmıyor. Her taso her yuvaya konabilir, sırayı oyuncu kurar (soldan sağa, yukarıdan aşağı 1-200).
+- **5100 benzersiz taso:** 34 set × 150 numara, kopya yok. Yaklaşık %4'ü holo.
+- Her setin duvarda bir vitrini var (15 × 10 yuva), toplam 34 vitrin.
+- Yuvalarda numara yazmıyor. Her taso her yuvaya konabilir, sırayı oyuncu kurar (soldan sağa, yukarıdan aşağı 1-150).
 - Yanlış yerdeki taso kırmızı halkayla gösterilir. Tamamen doğru dizilen vitrin yeşile döner.
 - Dolu yuvaya tıklayınca taso geri alınır ya da elindeki seçili tasoyla yer değiştirir.
 - Jeton sadece bir taso doğru yere ilk kez oturduğunda verilir.
@@ -42,7 +42,7 @@ Her `main` push'unda GitHub Actions web build alıp GitHub Pages'e yayınlar: ht
 2. **5000 taso, büyük depo, taso yüzleri ← buradayız** (sırada: veri şeması)
 3. Yetenek ağacı ve ekonomi (15-20 yetenek)
 4. Modüler yaratık sistemi ve görsel stil (gövde aileleri, parçalar, elementler, evrim)
-5. İçerik: 25 set, 5000 benzersiz taso için özgün yaratıklar
+5. İçerik: 34 set, 5100 benzersiz taso için özgün yaratıklar
 6. His ve cila: sesler, paket açma, holo shader
 7. Steam sayfası, devlog, demo, çıkış
 

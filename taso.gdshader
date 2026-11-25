@@ -4,9 +4,10 @@ shader_type spatial;
 // Yazılar küçük bir atlas'tan (rakamlar 0-9 ve set kodları) anında birleştiriliyor,
 // böylece 5000 benzersiz taso için 5000 doku gerekmiyor.
 // INSTANCE_CUSTOM.x = benzersiz taso id (set * nper + numara - 1), .y = holo (0/1)
-// Atlas düzeni: 10 sütun x 4 satır, hücre 128x64. Satır 0: rakamlar, satır 1-3: set kodları.
+// Atlas düzeni: 10 sütun x 'rows' satır, hücre 128x64. Satır 0: rakamlar, sonraki satırlar: set kodları.
 uniform sampler2D atlas : source_color, filter_linear;
-uniform float nper = 200.0;
+uniform float nper = 150.0;
+uniform float rows = 5.0;
 uniform float radius = 0.12;
 
 varying vec2 face_uv;
@@ -23,7 +24,7 @@ float sample_cell(vec2 cell, vec2 local) {
 	if (local.x < 0.0 || local.x > 1.0 || local.y < 0.0 || local.y > 1.0) {
 		return 0.0;
 	}
-	return texture(atlas, (cell + local) / vec2(10.0, 4.0)).a;
+	return texture(atlas, (cell + local) / vec2(10.0, rows)).a;
 }
 
 int digit_at(int num, int digits, int idx) {

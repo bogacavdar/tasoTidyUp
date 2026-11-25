@@ -1,12 +1,12 @@
 extends Node3D
 ## Taso Kaosu — 3D birinci şahıs prototip.
-## Dev bir depo, kaotik yığınlarda 5000 BENZERSİZ taso (25 set x 200), duvarlarda 25 vitrin.
+## Dev bir depo, kaotik yığınlarda 5000 BENZERSİZ taso (34 set x 150 = 5100), duvarlarda 34 vitrin.
 ## Her taso her yuvaya konabilir; sırayı oyuncu kurar. Yanlış yerdekiler kırmızı,
 ## tamamen doğru dizilen vitrin yeşil olur.
 ## Sahne tamamen koddan kuruluyor; dışarıdan model yok.
 
 # ---------------- Ayarlar ----------------
-const NUMBERS_PER_SET := 200
+const NUMBERS_PER_SET := 150
 const HOLO_CHANCE := 0.04
 const SCATTER_RATIO := 0.06   # yığın dışına, yere saçılan oran
 
@@ -21,7 +21,7 @@ const ROOM_W := 60.0           # x
 const ROOM_D := 50.0           # z
 const WALL_H := 7.0
 
-const SLOT_COLS := 20
+const SLOT_COLS := 15
 const SLOT_ROWS := 10
 const SLOT_GAP := 0.28
 const BOARD_Y := 1.86          # vitrin panosunun orta yüksekliği
@@ -45,7 +45,11 @@ const SETS := [
 	{"name": "Zümrüt Orman", "code": "ZO"}, {"name": "Fırtına Burnu", "code": "FB"},
 	{"name": "Kehribar Köy", "code": "KH"}, {"name": "Gümüş Nehir", "code": "GN"},
 	{"name": "Yosun Mağara", "code": "YM"}, {"name": "Güneş Sarayı", "code": "GS"},
-	{"name": "Kuyruklu Yıldız", "code": "KY"},
+	{"name": "Kuyruklu Yıldız", "code": "KY"}, {"name": "Kar Ovası", "code": "KO"},
+	{"name": "Altın Kum", "code": "AK"}, {"name": "Mor Dağ", "code": "MD"},
+	{"name": "Rüzgâr Gülü", "code": "RG"}, {"name": "Gök Kubbe", "code": "GK"},
+	{"name": "Kaya Kalesi", "code": "KA"}, {"name": "Dalga Kıyısı", "code": "DK"},
+	{"name": "Volkan Ağzı", "code": "VA"}, {"name": "Çiçek Vadisi", "code": "ÇV"},
 ]
 const PLAIN := Color("d9cfb8")
 const RING_EMPTY := Color("1c1917")
@@ -104,6 +108,7 @@ var holo_mm: MultiMesh
 var holo_mmi: MultiMeshInstance3D
 var holo_ring_mat: StandardMaterial3D
 var atlas_vp: SubViewport
+var atlas_rows := 5
 var shelves: Array = []
 var shelf_titles: Array = []
 var ring_mm: MultiMesh
@@ -168,7 +173,8 @@ func _build_atlas() -> void:
 	var cw := 128
 	var ch := 64
 	atlas_vp = SubViewport.new()
-	atlas_vp.size = Vector2i(10 * cw, 4 * ch)
+	atlas_rows = 1 + ceili(set_count / 10.0)
+	atlas_vp.size = Vector2i(10 * cw, atlas_rows * ch)
 	atlas_vp.transparent_bg = true
 	atlas_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	add_child(atlas_vp)
@@ -210,6 +216,7 @@ func _make_taso_material() -> void:
 	taso_mat.shader = load("res://taso.gdshader")
 	taso_mat.set_shader_parameter("atlas", atlas_vp.get_texture())
 	taso_mat.set_shader_parameter("nper", float(NUMBERS_PER_SET))
+	taso_mat.set_shader_parameter("rows", float(atlas_rows))
 	taso_mat.set_shader_parameter("radius", TASO_R)
 
 
@@ -286,16 +293,16 @@ func _build_world() -> void:
 	_box(self, Vector3(0.3, WALL_H, ROOM_D + 0.6), Vector3(-hw - 0.15, WALL_H / 2, 0), wall, "wall")
 	_box(self, Vector3(0.3, WALL_H, ROOM_D + 0.6), Vector3(hw + 0.15, WALL_H / 2, 0), wall, "wall")
 
-	# 25 vitrin: kuzey 8, güney 8, doğu 5, batı 5 yer var; ilk 25'i kullanılır
+	# 34 vitrin: kuzey 10, güney 10, doğu 8, batı 8 yer var; ilk set_count kadarı kullanılır
 	var placements: Array = []
+	for k in 10:
+		placements.append([Vector3(-24.75 + 5.5 * k, 0, -hd + 0.05), 0.0])
+	for k in 10:
+		placements.append([Vector3(-24.75 + 5.5 * k, 0, hd - 0.05), PI])
 	for k in 8:
-		placements.append([Vector3(-24.5 + 7.0 * k, 0, -hd + 0.05), 0.0])
+		placements.append([Vector3(hw - 0.05, 0, -19.25 + 5.5 * k), -PI / 2])
 	for k in 8:
-		placements.append([Vector3(-24.5 + 7.0 * k, 0, hd - 0.05), PI])
-	for z in [-16.0, -8.0, 0.0, 8.0, 16.0]:
-		placements.append([Vector3(hw - 0.05, 0, z), -PI / 2])
-	for z in [-16.0, -8.0, 0.0, 8.0, 16.0]:
-		placements.append([Vector3(-hw + 0.05, 0, z), PI / 2])
+		placements.append([Vector3(-hw + 0.05, 0, -19.25 + 5.5 * k), PI / 2])
 
 	var board_w := SLOT_COLS * SLOT_GAP + 0.3
 	var board_h := SLOT_ROWS * SLOT_GAP + 0.4
