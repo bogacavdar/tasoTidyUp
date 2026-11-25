@@ -2,14 +2,15 @@
 
 Godot ile yapılan bir "kaostan düzene" toplu dizme oyunu. Oyuncu birinci şahıs bakışla, yere yığılmış binlerce tasoyu setlerine ve numaralarına göre vitrinlere diziyor, kazandığı jetonlarla yetenek açıyor ve hızlanıyor.
 
-## Şu anki durum: Aşama 1, 3D birinci şahıs prototip
+## Şu anki durum: Aşama 2, büyük depo ve 5000 taso
 
-Bu sürümün tek amacı şu soruya cevap bulmak: **Binlerce tasoyu dizmek eğlenceli mi?** Bu yüzden yaratık çizimi yok, tasolar düz renkli diskler.
-
-- Odanın ortasında 500 tasoluk bir yığın var. 4 set × 40 numara (160 benzersiz, geri kalanı kopya), yaklaşık %5'i holo.
-- Duvarlarda her set için bir vitrin (8 × 5 numaralı yuva).
-- Yürü, yığındaki tasoya bak ve al, vitrindeki doğru yuvaya yerleştir.
-- Kopya Kutusu, tamamlanan vitrin bonusu.
+- 40×30 m'lik depo. 6 kaotik yığın ve yere saçılmış tasolar, toplam 5000 taso.
+- 12 set × 60 numara (720 benzersiz taso), yaklaşık %4'ü holo.
+- Her setin duvarda bir vitrini var (10 × 6 numaralı yuva). Toplam 12 vitrin.
+- Taso yüzlerinde set kodu ve numara var (shader + çalışma anında üretilen doku atlası). Holo tasolar gökkuşağı gibi parlıyor.
+- Elde birden fazla taso tutulabiliyor (başta 10, Avuç ile 40). Fare tekerleğiyle seçim yapılıyor.
+- Zıplama, Shift ile hızlı koşu.
+- Yığınlar MultiMesh ile çiziliyor, bakılan taso uzamsal ızgarayla bulunuyor.
 - 4 yetenek: Renk Gözü, Otomatik Numara, Avuç (3 seviye), Holo Dedektörü.
 
 ### Tarayıcıda oyna
@@ -24,17 +25,18 @@ Her `main` push'unda GitHub Actions web build alıp GitHub Pages'e yayınlar: ht
 
 ### Kontroller
 
-- **WASD:** yürü, **Shift:** koş, **fare:** bak
-- **Sol tık:** yığından taso al / vitrindeki yuvaya yerleştir / Kopya Kutusu'na at
-- **Sağ tık veya Q:** elindekileri baktığın yere bırak (kendi ara yığınlarını yap)
+- **WASD:** yürü, **Shift:** koş, **Boşluk:** zıpla, **fare:** bak
+- **Sol tık:** yığından taso al / seçili tasoyu vitrindeki yuvaya yerleştir / kopyaları Kopya Kutusu'na at
+- **Fare tekerleği:** eldeki tasolar arasında seçim yap
+- **Q:** seçili tasoyu bırak, **sağ tık:** elindekilerin hepsini bırak
 - **1-4:** yetenek satın al
 - **R:** yeniden başla, **Esc:** fareyi serbest bırak
 
 ## Yol haritası
 
 0. Konsept: 3D birinci şahıs, tasolar raflara ve vitrinlere dizilir
-1. **Çirkin prototip ← buradayız**
-2. Veri şeması + 5000 taso performans testi (MultiMesh)
+1. Çirkin prototip ✓
+2. **5000 taso, büyük depo, taso yüzleri ← buradayız** (sırada: veri şeması)
 3. Yetenek ağacı ve ekonomi (15-20 yetenek)
 4. Modüler yaratık sistemi ve görsel stil (gövde aileleri, parçalar, elementler, evrim)
 5. İçerik: yaklaşık 150 özgün yaratık, 5-6 set, 3000-5000 taso

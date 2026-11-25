@@ -1,51 +1,78 @@
 extends Node3D
-## Taso Kaosu — 3D birinci şahıs prototip.
-## Odanın ortasında dev bir taso yığını; duvarlarda her set için bir vitrin.
-## Oyuncu yürür, yığından taso alır, vitrindeki doğru numaralı yuvaya yerleştirir.
+## Taso Kaosu — 3D birinci şahıs prototip (Aşama 2).
+## Büyük bir depo, birkaç kaotik taso yığını (5000 taso), duvarlarda 12 set vitrini.
+## Oyuncu yürür/koşar/zıplar, yığınlardan taso toplar, fare tekerleğiyle elindekini seçer
+## ve vitrindeki doğru numaralı yuvaya yerleştirir.
 ## Sahne tamamen koddan kuruluyor; dışarıdan model yok.
 
 # ---------------- Ayarlar ----------------
-const SET_COUNT := 4
-const NUMBERS_PER_SET := 40
-const TASO_COUNT := 500
-const HOLO_CHANCE := 0.05
+const TASO_COUNT := 5000
+const NUMBERS_PER_SET := 60
+const HOLO_CHANCE := 0.04
+const SCATTER_RATIO := 0.08   # yığın dışına, yere saçılan oran
 
 const TASO_R := 0.12
 const TASO_H := 0.014
 const BASE_Y := 0.02
-const PILE_R := 1.7
-const PILE_HEIGHT := 0.4
-const REACH := 3.2
-const GRAB_RADIUS := 0.35
+const REACH := 3.4
+const GRAB_RADIUS := 0.4
+const CELL := 1.0              # uzamsal ızgara hücre boyu
 
-const SLOT_COLS := 8
-const SLOT_ROWS := 5
+const ROOM_W := 40.0           # x
+const ROOM_D := 30.0           # z
+const WALL_H := 6.0
+
+const SLOT_COLS := 10
+const SLOT_ROWS := 6
 const SLOT_GAP := 0.3
-const BOARD_Y := 1.35
+const BOARD_Y := 1.4
 
-const MOVE_SPEED := 4.0
+const WALK_SPEED := 4.5
+const SPRINT_MULT := 2.0
+const JUMP_VELOCITY := 4.8
+const GRAVITY := 12.0
 const MOUSE_SENS := 0.0025
-const GRAVITY := 9.8
 
-const SET_NAMES := ["Kor Vadisi", "Derin Su", "Taş Kök", "Gece Rüzgârı"]
-const SET_LETTERS := ["K", "D", "T", "G"]
-const SET_COLORS := [Color("e0603a"), Color("3a8fe0"), Color("7bb04a"), Color("9a6ae6")]
+const SETS := [
+	{"name": "Kor Vadisi", "code": "KV", "color": Color("e0603a")},
+	{"name": "Derin Su", "code": "DS", "color": Color("3a8fe0")},
+	{"name": "Taş Kök", "code": "TK", "color": Color("7bb04a")},
+	{"name": "Gece Rüzgârı", "code": "GR", "color": Color("9a6ae6")},
+	{"name": "Buz Tepesi", "code": "BT", "color": Color("8fd3e8")},
+	{"name": "Şimşek Ovası", "code": "ŞO", "color": Color("f2c94c")},
+	{"name": "Kum Çölü", "code": "KÇ", "color": Color("d9a066")},
+	{"name": "Mantar Ormanı", "code": "MO", "color": Color("c0763b")},
+	{"name": "Demir Dağ", "code": "DD", "color": Color("9aa0aa")},
+	{"name": "Mercan Koyu", "code": "MK", "color": Color("ff7fa0")},
+	{"name": "Gölge Mağara", "code": "GM", "color": Color("7f86b5")},
+	{"name": "Yıldız Bahçe", "code": "YB", "color": Color("2fbfa5")},
+]
 const PLAIN := Color("d9cfb8")
 
+const PILES := [
+	Vector3(-9, 2.0, -5), Vector3(0, 1.8, -6), Vector3(9, 2.1, -4),
+	Vector3(-9, 1.9, 5), Vector3(1, 2.2, 4), Vector3(10, 1.8, 6),
+]  # x, yarıçap, z
+
 const SKILL_ORDER := ["renk", "oto", "avuc", "holo"]
-const AVUC_CAP := [1, 3, 6, 12]
+const AVUC_GRAB := [1, 3, 6, 12]
+const AVUC_CAP := [10, 15, 25, 40]
 
 const COIN_PLACE := 2
 const COIN_HOLO := 10
 const COIN_COPY := 1
-const COIN_ALBUM := 50
+const COIN_SET := 80
 
 # ---------------- Durum ----------------
+var set_count := SETS.size()
 var tasos: Array = []                 # Dictionary: grp, num, holo
 var pile_xf: Array[Transform3D] = []  # yığındaki son konum
 var in_pile: Array[bool] = []
+var pile_count := 0
+var grid := {}                        # Vector2i -> Array[int]
 var slots: Array = []                 # slots[grp][n] = taso indeksi ya da -1
 var hand: Array = []
+var sel := 0                          # eldeki seçili taso
 var holo_list: Array[int] = []
 var skills := {}
 var coins := 0
@@ -63,14 +90,15 @@ var player: CharacterBody3D
 var cam: Camera3D
 var hand_root: Node3D
 var taso_mesh: CylinderMesh
+var taso_mat: ShaderMaterial
 var pile_mm: MultiMesh
+var shelf_mm: MultiMesh
+var hand_mm: MultiMesh
 var holo_mm: MultiMesh
 var holo_mmi: MultiMeshInstance3D
 var holo_ring_mat: StandardMaterial3D
-var set_mats: Array = []
-var holo_mats: Array = []
-var plain_mat: StandardMaterial3D
-var plain_holo_mat: StandardMaterial3D
+var atlas_vp: SubViewport
+var atlas_cols := 1
 var shelves: Array = []
 var shelf_titles: Array = []
 var slot_labels: Array = []
@@ -87,50 +115,113 @@ var hud_center: Label
 func _ready() -> void:
 	randomize()
 	_init_skills()
-	_make_materials()
+	_build_atlas()
+	_make_taso_material()
 	_build_world()
 	_build_player()
 	_spawn_tasos()
 	_build_pile()
 	_build_hud()
-	_say("Yığına yürü, bir tasoya bak ve sol tıkla!")
+	_say("Bir yığına yürü, tasoya bak ve sol tıkla!")
 
 
 func _init_skills() -> void:
 	skills = {
 		"renk": {"name": "Renk Gözü", "desc": "yığındaki tasolar set rengini gösterir", "cost": [20], "level": 0},
-		"oto": {"name": "Otomatik Numara", "desc": "vitrine tıklayınca tasolar kendi yuvasına gider", "cost": [40], "level": 0},
-		"avuc": {"name": "Avuç", "desc": "tek tıkla 3 / 6 / 12 taso al", "cost": [60, 150, 400], "level": 0},
-		"holo": {"name": "Holo Dedektörü", "desc": "gömülü holo tasolar yığının içinden parlar", "cost": [80], "level": 0},
+		"oto": {"name": "Otomatik Numara", "desc": "vitrine tıklayınca elindeki o setin tüm tasoları yerine gider", "cost": [60], "level": 0},
+		"avuc": {"name": "Avuç", "desc": "tek tıkla 3/6/12 taso al, el kapasitesi 15/25/40", "cost": [40, 150, 400], "level": 0},
+		"holo": {"name": "Holo Dedektörü", "desc": "gömülü holo tasolar yığının içinden parlar", "cost": [120], "level": 0},
 	}
 
 
-func _make_materials() -> void:
+func _uid(t: Dictionary) -> int:
+	return int(t["grp"]) * NUMBERS_PER_SET + int(t["num"]) - 1
+
+
+func _set_color(g: int) -> Color:
+	return SETS[g]["color"]
+
+
+# ---------------- Taso yüzü atlası ----------------
+# Her benzersiz taso için 64x64'lük bir hücre: beyaz daire, set kodu ve numara.
+# Bir SubViewport bir kez çiziyor, shader bu dokuyu kullanıyor.
+func _build_atlas() -> void:
+	var total := set_count * NUMBERS_PER_SET
+	atlas_cols = int(ceil(sqrt(float(total))))
+	var cell := 64
+	atlas_vp = SubViewport.new()
+	atlas_vp.size = Vector2i(atlas_cols * cell, atlas_cols * cell)
+	atlas_vp.transparent_bg = true
+	atlas_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	add_child(atlas_vp)
+	var root := Control.new()
+	root.size = Vector2(atlas_vp.size)
+	atlas_vp.add_child(root)
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(1, 1, 1, 0.92)
+	sb.set_corner_radius_all(24)
+	for u in total:
+		var g := floori(float(u) / NUMBERS_PER_SET)
+		var n := u % NUMBERS_PER_SET + 1
+		var origin := Vector2((u % atlas_cols) * cell, floori(float(u) / atlas_cols) * cell)
+		var disc := Panel.new()
+		disc.add_theme_stylebox_override("panel", sb)
+		disc.position = origin + Vector2(8, 8)
+		disc.size = Vector2(48, 48)
+		root.add_child(disc)
+		var code := Label.new()
+		code.text = SETS[g]["code"]
+		code.position = origin + Vector2(0, 10)
+		code.size = Vector2(cell, 14)
+		code.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		code.add_theme_font_size_override("font_size", 11)
+		code.add_theme_color_override("font_color", _set_color(g).darkened(0.45))
+		root.add_child(code)
+		var num := Label.new()
+		num.text = str(n)
+		num.position = origin + Vector2(0, 22)
+		num.size = Vector2(cell, 30)
+		num.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		num.add_theme_font_size_override("font_size", 24)
+		num.add_theme_color_override("font_color", Color(0.08, 0.08, 0.08))
+		root.add_child(num)
+	_freeze_atlas.call_deferred()
+
+
+func _freeze_atlas() -> void:
+	for i in 4:
+		await get_tree().process_frame
+	atlas_vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
+
+
+func _make_taso_material() -> void:
 	taso_mesh = CylinderMesh.new()
 	taso_mesh.top_radius = TASO_R
 	taso_mesh.bottom_radius = TASO_R
 	taso_mesh.height = TASO_H
 	taso_mesh.radial_segments = 24
 	taso_mesh.rings = 1
-	for g in SET_COUNT:
-		var c: Color = SET_COLORS[g]
-		set_mats.append(_mat(c))
-		var hm := _mat(c)
-		hm.emission_enabled = true
-		hm.emission = c.lightened(0.4)
-		hm.emission_energy_multiplier = 0.9
-		holo_mats.append(hm)
-	plain_mat = _mat(PLAIN)
-	plain_holo_mat = _mat(PLAIN)
-	plain_holo_mat.emission_enabled = true
-	plain_holo_mat.emission = Color(1, 0.95, 0.7)
-	plain_holo_mat.emission_energy_multiplier = 0.6
+	taso_mat = ShaderMaterial.new()
+	taso_mat.shader = load("res://taso.gdshader")
+	taso_mat.set_shader_parameter("atlas", atlas_vp.get_texture())
+	taso_mat.set_shader_parameter("cols", float(atlas_cols))
+	taso_mat.set_shader_parameter("radius", TASO_R)
+
+
+func _new_mm(count: int) -> MultiMesh:
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = true
+	mm.use_custom_data = true
+	mm.mesh = taso_mesh
+	mm.instance_count = count
+	return mm
 
 
 func _mat(c: Color) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.albedo_color = c
-	m.roughness = 0.75
+	m.roughness = 0.8
 	return m
 
 
@@ -161,77 +252,95 @@ func _build_world() -> void:
 	env.background_color = Color("1d1a18")
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(0.9, 0.85, 0.8)
-	env.ambient_light_energy = 0.55
+	env.ambient_light_energy = 0.6
 	we.environment = env
 	add_child(we)
 
 	var sun := DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-60, 30, 0)
-	sun.light_energy = 0.7
+	sun.light_energy = 0.6
 	add_child(sun)
-	for p in [Vector3(0, 2.8, 0), Vector3(0, 2.6, -5), Vector3(0, 2.6, 5)]:
-		var lamp := OmniLight3D.new()
-		lamp.position = p
-		lamp.omni_range = 9.0
-		lamp.light_energy = 1.3
-		lamp.light_color = Color(1, 0.92, 0.8)
-		add_child(lamp)
+	for x in [-12.0, 0.0, 12.0]:
+		for z in [-7.0, 7.0]:
+			var lamp := OmniLight3D.new()
+			lamp.position = Vector3(x, WALL_H - 0.6, z)
+			lamp.omni_range = 16.0
+			lamp.light_energy = 1.4
+			lamp.light_color = Color(1, 0.92, 0.8)
+			add_child(lamp)
 
-	# Zemin, halı, duvarlar
-	_box(self, Vector3(14.6, 0.2, 14.6), Vector3(0, -0.1, 0), Color("4a3a2e"), "floor")
-	_box(self, Vector3(4.4, 0.01, 4.4), Vector3(0, 0.005, 0), Color("6b2e2e"), "floor")
+	var hw := ROOM_W / 2.0
+	var hd := ROOM_D / 2.0
+	_box(self, Vector3(ROOM_W + 0.6, 0.2, ROOM_D + 0.6), Vector3(0, -0.1, 0), Color("4a3a2e"), "floor")
+	for p in PILES:
+		var pv: Vector3 = p
+		_box(self, Vector3(pv.y * 2.2, 0.01, pv.y * 2.2), Vector3(pv.x, 0.005, pv.z), Color("6b2e2e"), "floor")
 	var wall := Color("5d5249")
-	_box(self, Vector3(14.6, 3.2, 0.3), Vector3(0, 1.6, -7.15), wall, "wall")
-	_box(self, Vector3(14.6, 3.2, 0.3), Vector3(0, 1.6, 7.15), wall, "wall")
-	_box(self, Vector3(0.3, 3.2, 14.6), Vector3(-7.15, 1.6, 0), wall, "wall")
-	_box(self, Vector3(0.3, 3.2, 14.6), Vector3(7.15, 1.6, 0), wall, "wall")
+	_box(self, Vector3(ROOM_W + 0.6, WALL_H, 0.3), Vector3(0, WALL_H / 2, -hd - 0.15), wall, "wall")
+	_box(self, Vector3(ROOM_W + 0.6, WALL_H, 0.3), Vector3(0, WALL_H / 2, hd + 0.15), wall, "wall")
+	_box(self, Vector3(0.3, WALL_H, ROOM_D + 0.6), Vector3(-hw - 0.15, WALL_H / 2, 0), wall, "wall")
+	_box(self, Vector3(0.3, WALL_H, ROOM_D + 0.6), Vector3(hw + 0.15, WALL_H / 2, 0), wall, "wall")
 
-	# Vitrinler: kuzey duvarında 2, güney duvarında 2
-	var placements := [
-		[Vector3(-3.2, 0, -6.95), 0.0],
-		[Vector3(3.2, 0, -6.95), 0.0],
-		[Vector3(-3.2, 0, 6.95), PI],
-		[Vector3(3.2, 0, 6.95), PI],
-	]
-	for g in SET_COUNT:
+	# 12 vitrin: kuzey 4, güney 4, doğu 2, batı 2
+	var placements: Array = []
+	for x in [-13.5, -4.5, 4.5, 13.5]:
+		placements.append([Vector3(x, 0, -hd + 0.05), 0.0])
+	for x in [-13.5, -4.5, 4.5, 13.5]:
+		placements.append([Vector3(x, 0, hd - 0.05), PI])
+	for z in [-5.0, 5.0]:
+		placements.append([Vector3(hw - 0.05, 0, z), -PI / 2])
+	for z in [-5.0, 5.0]:
+		placements.append([Vector3(-hw + 0.05, 0, z), PI / 2])
+
+	var board_w := SLOT_COLS * SLOT_GAP + 0.3
+	var board_h := SLOT_ROWS * SLOT_GAP + 0.4
+	var ring_mesh := CylinderMesh.new()
+	ring_mesh.top_radius = TASO_R + 0.012
+	ring_mesh.bottom_radius = TASO_R + 0.012
+	ring_mesh.height = 0.004
+	ring_mesh.radial_segments = 24
+	var ring_mm := MultiMesh.new()
+	ring_mm.transform_format = MultiMesh.TRANSFORM_3D
+	ring_mm.mesh = ring_mesh
+	ring_mm.instance_count = set_count * NUMBERS_PER_SET
+	var ring_mmi := MultiMeshInstance3D.new()
+	ring_mmi.multimesh = ring_mm
+	ring_mmi.material_override = _mat(Color("1c1917"))
+	add_child(ring_mmi)
+
+	shelf_mm = _new_mm(set_count * NUMBERS_PER_SET)
+	var shelf_mmi := MultiMeshInstance3D.new()
+	shelf_mmi.multimesh = shelf_mm
+	shelf_mmi.material_override = taso_mat
+	add_child(shelf_mmi)
+
+	for g in set_count:
 		var shelf := Node3D.new()
 		shelf.position = placements[g][0]
 		shelf.rotation.y = placements[g][1]
 		add_child(shelf)
 		shelves.append(shelf)
-		var col: Color = SET_COLORS[g]
-		var board := _box(shelf, Vector3(2.7, 1.9, 0.1), Vector3(0, BOARD_Y, 0), Color("2b2623"), "shelf")
+		var col := _set_color(g)
+		var board := _box(shelf, Vector3(board_w, board_h, 0.1), Vector3(0, BOARD_Y, 0), Color("2b2623"), "shelf")
 		board.set_meta("grp", g)
-		var header := _box(shelf, Vector3(2.7, 0.3, 0.14), Vector3(0, 2.45, 0.02), col.darkened(0.15), "shelf")
+		var header := _box(shelf, Vector3(board_w, 0.32, 0.14), Vector3(0, BOARD_Y + board_h / 2 + 0.16, 0.02), col.darkened(0.15), "shelf")
 		header.set_meta("grp", g)
-		var counter := _box(shelf, Vector3(2.7, 0.35, 0.45), Vector3(0, 0.175, 0.2), Color("3a302a"), "shelf")
+		var counter := _box(shelf, Vector3(board_w, 0.3, 0.45), Vector3(0, 0.15, 0.2), Color("3a302a"), "shelf")
 		counter.set_meta("grp", g)
 
 		var title := Label3D.new()
 		title.font_size = 64
 		title.pixel_size = 0.003
 		title.outline_size = 12
-		title.position = Vector3(0, 2.45, 0.1)
+		title.position = Vector3(0, BOARD_Y + board_h / 2 + 0.16, 0.1)
 		shelf.add_child(title)
 		shelf_titles.append(title)
 
-		var ring_mat := _mat(Color("1c1917"))
-		var ring_mesh := CylinderMesh.new()
-		ring_mesh.top_radius = TASO_R + 0.01
-		ring_mesh.bottom_radius = TASO_R + 0.01
-		ring_mesh.height = 0.004
-		ring_mesh.radial_segments = 24
 		var row_labels: Array = []
 		var row_slots: Array = []
 		for n in NUMBERS_PER_SET:
 			var sp := _slot_local(n)
-			var ring := MeshInstance3D.new()
-			ring.mesh = ring_mesh
-			ring.material_override = ring_mat
-			ring.position = sp + Vector3(0, 0, 0.002)
-			ring.rotation.x = PI / 2
-			shelf.add_child(ring)
-
+			ring_mm.set_instance_transform(g * NUMBERS_PER_SET + n, shelf.global_transform * Transform3D(Basis(Vector3.RIGHT, PI / 2), sp + Vector3(0, 0, 0.002)))
 			var lb := Label3D.new()
 			lb.text = str(n + 1)
 			lb.font_size = 48
@@ -242,20 +351,22 @@ func _build_world() -> void:
 			shelf.add_child(lb)
 			row_labels.append(lb)
 			row_slots.append(-1)
+			shelf_mm.set_instance_transform(g * NUMBERS_PER_SET + n, hidden_xf)
 		slot_labels.append(row_labels)
 		slots.append(row_slots)
 		_update_title(g)
 
-	# Kopya kutusu
-	_box(self, Vector3(0.9, 0.6, 0.9), Vector3(2.8, 0.3, 2.6), Color("6a4c86"), "copy")
-	var cl := Label3D.new()
-	cl.text = "KOPYA KUTUSU"
-	cl.font_size = 48
-	cl.pixel_size = 0.004
-	cl.outline_size = 10
-	cl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	cl.position = Vector3(2.8, 0.95, 2.6)
-	add_child(cl)
+	# Kopya kutuları
+	for x in [-4.5, 4.5]:
+		_box(self, Vector3(1.0, 0.7, 1.0), Vector3(x, 0.35, 0), Color("6a4c86"), "copy")
+		var cl := Label3D.new()
+		cl.text = "KOPYA KUTUSU"
+		cl.font_size = 48
+		cl.pixel_size = 0.004
+		cl.outline_size = 10
+		cl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		cl.position = Vector3(x, 1.1, 0)
+		add_child(cl)
 
 
 func _slot_local(n: int) -> Vector3:
@@ -278,12 +389,12 @@ func _update_title(g: int) -> void:
 		if v != -1:
 			cnt += 1
 	var lb: Label3D = shelf_titles[g]
-	lb.text = "%s (%s)   %d/%d" % [SET_NAMES[g], SET_LETTERS[g], cnt, NUMBERS_PER_SET]
+	lb.text = "%s (%s)   %d/%d" % [SETS[g]["name"], SETS[g]["code"], cnt, NUMBERS_PER_SET]
 
 
 func _build_player() -> void:
 	player = CharacterBody3D.new()
-	player.position = Vector3(0, 0.9, 4.6)
+	player.position = Vector3(0, 0.95, 11)
 	var cs := CollisionShape3D.new()
 	var cap := CapsuleShape3D.new()
 	cap.radius = 0.35
@@ -294,22 +405,29 @@ func _build_player() -> void:
 	cam.position = Vector3(0, 0.7, 0)
 	cam.fov = 75
 	cam.near = 0.03
+	cam.far = 120
 	player.add_child(cam)
 	hand_root = Node3D.new()
-	hand_root.position = Vector3(0.32, -0.3, -0.6)
-	hand_root.rotation = Vector3(1.1, -0.3, 0)
+	hand_root.position = Vector3(0.3, -0.28, -0.55)
+	hand_root.rotation = Vector3(1.15, -0.25, 0)
 	cam.add_child(hand_root)
+	hand_mm = _new_mm(AVUC_CAP[AVUC_CAP.size() - 1])
+	hand_mm.visible_instance_count = 0
+	var hmi := MultiMeshInstance3D.new()
+	hmi.multimesh = hand_mm
+	hmi.material_override = taso_mat
+	hand_root.add_child(hmi)
 	add_child(player)
 
 
 # ---------------- Tasolar ----------------
 func _spawn_tasos() -> void:
 	var pairs: Array = []
-	for g in SET_COUNT:
+	for g in set_count:
 		for n in NUMBERS_PER_SET:
 			pairs.append(Vector2i(g, n + 1))
 	while pairs.size() < TASO_COUNT:
-		pairs.append(Vector2i(randi() % SET_COUNT, randi() % NUMBERS_PER_SET + 1))
+		pairs.append(Vector2i(randi() % set_count, randi() % NUMBERS_PER_SET + 1))
 	pairs.shuffle()
 	for i in pairs.size():
 		var p: Vector2i = pairs[i]
@@ -317,36 +435,39 @@ func _spawn_tasos() -> void:
 		tasos.append({"grp": p.x, "num": p.y, "holo": holo})
 		if holo:
 			holo_list.append(i)
-		var ang := randf() * TAU
-		var rr := sqrt(randf()) * PILE_R
-		var heap := PILE_HEIGHT * (1.0 - rr / PILE_R)
-		var pos := Vector3(cos(ang) * rr, BASE_Y + randf() * heap, sin(ang) * rr)
+		var pos: Vector3
+		if randf() < SCATTER_RATIO:
+			pos = Vector3(randf_range(-ROOM_W / 2 + 2, ROOM_W / 2 - 2), BASE_Y, randf_range(-ROOM_D / 2 + 2, ROOM_D / 2 - 2))
+		else:
+			var pile: Vector3 = PILES[randi() % PILES.size()]
+			var radius := pile.y
+			var heap_h := 0.5
+			var ang := randf() * TAU
+			var rr := sqrt(randf()) * radius
+			var heap := heap_h * (1.0 - rr / radius)
+			pos = Vector3(pile.x + cos(ang) * rr, BASE_Y + randf() * heap, pile.z + sin(ang) * rr)
 		var b := Basis(Vector3.UP, randf() * TAU) * Basis(Vector3.RIGHT, randf_range(-0.45, 0.45))
 		pile_xf.append(Transform3D(b, pos))
 		in_pile.append(true)
+		_grid_add(i)
+	pile_count = tasos.size()
 
 
 func _build_pile() -> void:
-	pile_mm = MultiMesh.new()
-	pile_mm.transform_format = MultiMesh.TRANSFORM_3D
-	pile_mm.use_colors = true
-	pile_mm.mesh = taso_mesh
-	pile_mm.instance_count = tasos.size()
+	pile_mm = _new_mm(tasos.size())
 	var mmi := MultiMeshInstance3D.new()
 	mmi.multimesh = pile_mm
-	var m := StandardMaterial3D.new()
-	m.vertex_color_use_as_albedo = true
-	m.roughness = 0.6
-	mmi.material_override = m
+	mmi.material_override = taso_mat
 	add_child(mmi)
 	for i in tasos.size():
 		pile_mm.set_instance_transform(i, pile_xf[i])
+		pile_mm.set_instance_custom_data(i, _custom(i))
 	_recolor_pile()
 
 	# Holo dedektörü halkaları: derinlik testi yok, yığının içinden görünür
 	var torus := TorusMesh.new()
 	torus.inner_radius = TASO_R + 0.01
-	torus.outer_radius = TASO_R + 0.04
+	torus.outer_radius = TASO_R + 0.045
 	holo_mm = MultiMesh.new()
 	holo_mm.transform_format = MultiMesh.TRANSFORM_3D
 	holo_mm.mesh = torus
@@ -364,11 +485,20 @@ func _build_pile() -> void:
 	_refresh_holo()
 
 
+func _custom(i: int) -> Color:
+	var t: Dictionary = tasos[i]
+	return Color(float(_uid(t)), 1.0 if t["holo"] else 0.0, 0.0, 0.0)
+
+
+func _taso_color(i: int) -> Color:
+	if skills["renk"]["level"] > 0:
+		return _set_color(tasos[i]["grp"])
+	return PLAIN
+
+
 func _recolor_pile() -> void:
-	var reveal: bool = skills["renk"]["level"] > 0
 	for i in tasos.size():
-		var c: Color = SET_COLORS[tasos[i]["grp"]] if reveal else PLAIN
-		pile_mm.set_instance_color(i, c)
+		pile_mm.set_instance_color(i, _taso_color(i))
 
 
 func _refresh_holo() -> void:
@@ -377,8 +507,28 @@ func _refresh_holo() -> void:
 		holo_mm.set_instance_transform(k, pile_xf[i] if in_pile[i] else hidden_xf)
 
 
+# Uzamsal ızgara: 5000 taso arasında bakılanı ve yakındakileri hızlı bulmak için
+func _cell(p: Vector3) -> Vector2i:
+	return Vector2i(floori(p.x / CELL), floori(p.z / CELL))
+
+
+func _grid_add(i: int) -> void:
+	var k := _cell(pile_xf[i].origin)
+	if not grid.has(k):
+		grid[k] = []
+	grid[k].append(i)
+
+
+func _grid_remove(i: int) -> void:
+	var k := _cell(pile_xf[i].origin)
+	if grid.has(k):
+		grid[k].erase(i)
+
+
 func _take(i: int) -> void:
+	_grid_remove(i)
 	in_pile[i] = false
+	pile_count -= 1
 	pile_mm.set_instance_transform(i, hidden_xf)
 	hand.append(i)
 
@@ -386,7 +536,13 @@ func _take(i: int) -> void:
 func _put_in_pile(i: int, xf: Transform3D) -> void:
 	pile_xf[i] = xf
 	in_pile[i] = true
+	pile_count += 1
 	pile_mm.set_instance_transform(i, xf)
+	_grid_add(i)
+
+
+func _grab_count() -> int:
+	return AVUC_GRAB[skills["avuc"]["level"]]
 
 
 func _cap() -> int:
@@ -409,12 +565,17 @@ func _physics_process(delta: float) -> void:
 	var d := fwd * mv.y + right * mv.x
 	d.y = 0
 	d = d.normalized()
-	var speed := MOVE_SPEED * (1.7 if Input.is_key_pressed(KEY_SHIFT) else 1.0)
+	var sprint := Input.is_key_pressed(KEY_SHIFT)
+	var speed := WALK_SPEED * (SPRINT_MULT if sprint else 1.0)
 	player.velocity.x = d.x * speed
 	player.velocity.z = d.z * speed
-	if not player.is_on_floor():
+	if player.is_on_floor():
+		if Input.is_key_pressed(KEY_SPACE):
+			player.velocity.y = JUMP_VELOCITY
+	else:
 		player.velocity.y -= GRAVITY * delta
 	player.move_and_slide()
+	cam.fov = lerpf(cam.fov, 82.0 if (sprint and mv != Vector2.ZERO) else 75.0, 8.0 * delta)
 	target = _find_target()
 
 
@@ -438,17 +599,22 @@ func _unhandled_input(event: InputEvent) -> void:
 		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 			return
-		if event.button_index == MOUSE_BUTTON_LEFT:
-			_on_use()
-		elif event.button_index == MOUSE_BUTTON_RIGHT:
-			_drop_hand()
+		match event.button_index:
+			MOUSE_BUTTON_LEFT:
+				_on_use()
+			MOUSE_BUTTON_RIGHT:
+				_drop(false)
+			MOUSE_BUTTON_WHEEL_UP:
+				_cycle(-1)
+			MOUSE_BUTTON_WHEEL_DOWN:
+				_cycle(1)
 		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		match event.keycode:
 			KEY_ESCAPE:
 				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 			KEY_Q:
-				_drop_hand()
+				_drop(true)
 			KEY_R:
 				get_tree().reload_current_scene()
 			KEY_1:
@@ -461,21 +627,36 @@ func _unhandled_input(event: InputEvent) -> void:
 				_try_buy("holo")
 
 
+func _cycle(dir: int) -> void:
+	if hand.is_empty():
+		return
+	sel = posmod(sel + dir, hand.size())
+	_rebuild_hand()
+
+
 func _find_target() -> Dictionary:
 	var o := cam.global_position
 	var d := -cam.global_transform.basis.z
 	var best_t := REACH
 	var res := {"kind": ""}
-	for i in tasos.size():
-		if not in_pile[i]:
+	var cells := {}
+	var step := 0.25
+	for s in int(REACH / step) + 1:
+		var p := o + d * (s * step)
+		for dx in [-TASO_R, TASO_R]:
+			for dz in [-TASO_R, TASO_R]:
+				cells[_cell(p + Vector3(dx, 0, dz))] = true
+	for k in cells:
+		if not grid.has(k):
 			continue
-		var v := pile_xf[i].origin - o
-		var t := v.dot(d)
-		if t < 0.0 or t > best_t:
-			continue
-		if v.length_squared() - t * t < TASO_R * TASO_R:
-			best_t = t
-			res = {"kind": "taso", "idx": i, "point": o + d * t}
+		for i in grid[k]:
+			var v := pile_xf[i].origin - o
+			var t := v.dot(d)
+			if t < 0.0 or t > best_t:
+				continue
+			if v.length_squared() - t * t < TASO_R * TASO_R:
+				best_t = t
+				res = {"kind": "taso", "idx": i, "point": o + d * t}
 	var q := PhysicsRayQueryParameters3D.create(o, o + d * REACH)
 	q.exclude = [player.get_rid()]
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
@@ -494,7 +675,7 @@ func _on_use() -> void:
 	match kind:
 		"taso":
 			if hand.size() >= _cap():
-				_say("Elin dolu! Vitrine yerleştir ya da Q ile bırak")
+				_say("Elin dolu (%d)! Vitrine yerleştir ya da Q / sağ tık ile bırak" % _cap())
 				return
 			_grab(target["idx"])
 		"shelf":
@@ -507,19 +688,27 @@ func _on_use() -> void:
 
 
 func _grab(first: int) -> void:
-	var cap := _cap()
 	var center := pile_xf[first].origin
+	var limit := mini(_cap(), hand.size() + _grab_count())
 	_take(first)
-	if hand.size() < cap:
+	if hand.size() < limit:
 		var near: Array = []
-		for i in tasos.size():
-			if in_pile[i] and pile_xf[i].origin.distance_to(center) <= GRAB_RADIUS:
-				near.append(i)
+		var r := ceili(GRAB_RADIUS / CELL)
+		var c0 := _cell(center)
+		for cx in range(c0.x - r, c0.x + r + 1):
+			for cz in range(c0.y - r, c0.y + r + 1):
+				var k := Vector2i(cx, cz)
+				if not grid.has(k):
+					continue
+				for i in grid[k]:
+					if pile_xf[i].origin.distance_to(center) <= GRAB_RADIUS:
+						near.append(i)
 		near.sort_custom(func(a, b): return pile_xf[a].origin.distance_to(center) < pile_xf[b].origin.distance_to(center))
 		for i in near:
-			if hand.size() >= cap:
+			if hand.size() >= limit:
 				break
 			_take(i)
+	sel = hand.size() - 1
 	_refresh_holo()
 	_rebuild_hand()
 
@@ -528,20 +717,35 @@ func _use_shelf(body: Node, hp: Vector3) -> void:
 	var g: int = body.get_meta("grp")
 	var shelf: Node3D = shelves[g]
 	var slot := _nearest_slot(shelf.to_local(hp))
-	var auto: bool = skills["oto"]["level"] > 0
-	var keep: Array = []
-	var cnt := 0
-	for i in hand:
+	if skills["oto"]["level"] > 0:
+		var keep: Array = []
+		var cnt := 0
+		for i in hand:
+			var t: Dictionary = tasos[i]
+			if t["grp"] == g and slots[g][t["num"] - 1] == -1:
+				_place(i, g)
+				cnt += 1
+			else:
+				keep.append(i)
+		hand = keep
+		if cnt == 0:
+			_say("Elindekilerin hiçbiri bu vitrine ait değil (ya da yerleri dolu)")
+	else:
+		var i: int = hand[sel]
 		var t: Dictionary = tasos[i]
 		var n: int = t["num"] - 1
-		if t["grp"] == g and slots[g][n] == -1 and (auto or n == slot):
-			_place(i, g)
-			cnt += 1
-		else:
-			keep.append(i)
-	hand = keep
-	if cnt == 0:
-		_say("Elindekilerin hiçbiri bu vitrine ait değil" if auto else "Yanlış yer!")
+		if t["grp"] != g:
+			_say("Seçili taso bu vitrine ait değil (tekerlekle değiştir)")
+			return
+		if slots[g][n] != -1:
+			_say("Bunun yeri zaten dolu, kopya! Kopya Kutusu'na at")
+			return
+		if n != slot:
+			_say("Yanlış yuva! Bu taso %d numaralı yuvaya gider" % (n + 1))
+			return
+		_place(i, g)
+		hand.remove_at(sel)
+	sel = clampi(sel, 0, maxi(hand.size() - 1, 0))
 	_rebuild_hand()
 
 
@@ -550,16 +754,13 @@ func _place(i: int, g: int) -> void:
 	var n: int = t["num"] - 1
 	slots[g][n] = i
 	placed += 1
-	var mi := MeshInstance3D.new()
-	mi.mesh = taso_mesh
-	mi.material_override = holo_mats[g] if t["holo"] else set_mats[g]
-	mi.position = _slot_local(n) + Vector3(0, 0, 0.009)
-	mi.rotation.x = PI / 2
 	var shelf: Node3D = shelves[g]
-	shelf.add_child(mi)
+	var mi := g * NUMBERS_PER_SET + n
+	shelf_mm.set_instance_transform(mi, shelf.global_transform * Transform3D(Basis(Vector3.RIGHT, PI / 2), _slot_local(n) + Vector3(0, 0, 0.009)))
+	shelf_mm.set_instance_color(mi, _set_color(g))
+	shelf_mm.set_instance_custom_data(mi, _custom(i))
 	var lb: Label3D = slot_labels[g][n]
-	lb.position.z = 0.07
-	lb.modulate = Color(0.05, 0.05, 0.05, 1)
+	lb.visible = false
 	coins += COIN_HOLO if t["holo"] else COIN_PLACE
 	if t["holo"]:
 		_say("HOLO! +%d jeton" % COIN_HOLO)
@@ -570,9 +771,9 @@ func _place(i: int, g: int) -> void:
 			full = false
 			break
 	if full:
-		coins += COIN_ALBUM
-		_say("%s vitrini tamam! +%d" % [SET_NAMES[g], COIN_ALBUM])
-	if placed == SET_COUNT * NUMBERS_PER_SET:
+		coins += COIN_SET
+		_say("%s vitrini tamam! +%d" % [SETS[g]["name"], COIN_SET])
+	if placed == set_count * NUMBERS_PER_SET:
 		finished = true
 
 
@@ -593,47 +794,56 @@ func _use_copy() -> void:
 	hand = keep
 	if cnt > 0:
 		_say("+%d kopya kutuya gitti" % cnt)
-	if not keep.is_empty():
-		_say("Bazılarının vitrinde yeri boş, kopya değil!")
+	elif not keep.is_empty():
+		_say("Elindekilerin vitrinde yeri boş, kopya değil!")
+	sel = clampi(sel, 0, maxi(hand.size() - 1, 0))
 	_rebuild_hand()
 
 
-func _drop_hand() -> void:
+## only_selected: Q yalnızca seçili tasoyu, sağ tık hepsini bırakır.
+func _drop(only_selected: bool) -> void:
 	if hand.is_empty():
 		return
+	var list: Array = [hand[sel]] if only_selected else hand.duplicate()
 	var pt := player.global_position - player.global_transform.basis.z * 1.0
 	pt.y = 0.0
 	var kind: String = target.get("kind", "")
 	if kind == "taso" or kind == "floor":
 		pt = target["point"]
-	var spread := 0.12 * sqrt(float(hand.size()))
-	for k in hand.size():
-		var i: int = hand[k]
+	var spread := 0.12 * sqrt(float(list.size()))
+	for k in list.size():
+		var i: int = list[k]
 		var off := Vector3.ZERO if k == 0 else Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)) * spread
 		var pos := pt + off
 		pos.y = maxf(pt.y, 0.0) + BASE_Y + k * TASO_H * 0.5
 		var b := Basis(Vector3.UP, randf() * TAU) * Basis(Vector3.RIGHT, randf_range(-0.25, 0.25))
 		_put_in_pile(i, Transform3D(b, pos))
-	hand.clear()
+		hand.erase(i)
+	sel = clampi(sel, 0, maxi(hand.size() - 1, 0))
 	_refresh_holo()
 	_rebuild_hand()
 
 
+## Seçili taso önde ve büyük, diğerleri arkasında yelpaze gibi.
 func _rebuild_hand() -> void:
-	for c in hand_root.get_children():
-		c.queue_free()
-	var reveal: bool = skills["renk"]["level"] > 0
-	for k in hand.size():
-		var t: Dictionary = tasos[hand[k]]
-		var g: int = t["grp"]
-		var mi := MeshInstance3D.new()
-		mi.mesh = taso_mesh
-		if reveal:
-			mi.material_override = holo_mats[g] if t["holo"] else set_mats[g]
+	hand_mm.visible_instance_count = hand.size()
+	var cnt := hand.size()
+	for k in cnt:
+		var i: int = hand[k]
+		var rel := k - sel
+		var xf: Transform3D
+		if rel == 0:
+			xf = Transform3D(Basis().scaled(Vector3.ONE * 1.25), Vector3(0, 0.06, 0.02))
 		else:
-			mi.material_override = plain_holo_mat if t["holo"] else plain_mat
-		mi.position = Vector3(k * 0.012, k * (TASO_H + 0.002), -k * 0.008)
-		hand_root.add_child(mi)
+			var a := absi(rel)
+			var side := 1.0 if rel > 0 else -1.0
+			var pos := Vector3(side * (0.05 + a * 0.022), -0.004 * a, -0.01 * a)
+			if a > 8:
+				pos = Vector3(side * 0.24, -0.04, -0.09)
+			xf = Transform3D(Basis(Vector3.FORWARD, -side * 0.08 * a).scaled(Vector3.ONE * 0.85), pos)
+		hand_mm.set_instance_transform(k, xf)
+		hand_mm.set_instance_color(k, _taso_color(i))
+		hand_mm.set_instance_custom_data(k, _custom(i))
 
 
 func _try_buy(key: String) -> void:
@@ -642,9 +852,6 @@ func _try_buy(key: String) -> void:
 	var costs: Array = sk["cost"]
 	if lvl >= costs.size():
 		_say("%s zaten en üst seviyede" % sk["name"])
-		return
-	if key == "avuc" and skills["oto"]["level"] == 0:
-		_say("Önce Otomatik Numara gerekli")
 		return
 	var c: int = costs[lvl]
 	if coins < c:
@@ -689,47 +896,54 @@ func _build_hud() -> void:
 	hud_info = _mk_label(layer, Vector2(500, 470), 22, Color.WHITE)
 	hud_info.size = Vector2(600, 30)
 	hud_info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	hud_msg = _mk_label(layer, Vector2(400, 380), 24, Color(1, 0.95, 0.7))
-	hud_msg.size = Vector2(800, 34)
+	hud_msg = _mk_label(layer, Vector2(300, 380), 24, Color(1, 0.95, 0.7))
+	hud_msg.size = Vector2(1000, 34)
 	hud_msg.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hud_center = _mk_label(layer, Vector2(300, 250), 40, Color("ffd36b"))
 	hud_center.size = Vector2(1000, 120)
 	hud_center.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	hud_hand = _mk_label(layer, Vector2(20, 50), 18, Color(1, 1, 1, 0.85))
+	hud_hand = _mk_label(layer, Vector2(20, 50), 18, Color(1, 1, 1, 0.9))
 	hud_skills = _mk_label(layer, Vector2(20, 760), 17, Color(1, 1, 1, 0.9))
-	var help := _mk_label(layer, Vector2(1060, 14), 14, Color(1, 1, 1, 0.6))
-	help.text = "WASD yürü  •  Shift koş  •  Fare bak\nSol tık: taso al / vitrine yerleştir / kopya kutusuna at\nSağ tık veya Q: elindekileri baktığın yere bırak\n1-4: yetenek satın al  •  R: yeniden  •  Esc: fareyi bırak"
+	var help := _mk_label(layer, Vector2(1040, 14), 14, Color(1, 1, 1, 0.6))
+	help.text = "WASD yürü  •  Shift koş  •  Boşluk zıpla  •  Fare bak\nSol tık: taso al / vitrine yerleştir / kopya kutusuna at\nTekerlek: eldeki tasoyu seç\nQ: seçiliyi bırak  •  Sağ tık: hepsini bırak\n1-4: yetenek satın al  •  R: yeniden  •  Esc: fareyi bırak"
+
+
+func _taso_name(i: int) -> String:
+	var t: Dictionary = tasos[i]
+	return "%s %d%s" % [SETS[t["grp"]]["code"], t["num"], " HOLO" if t["holo"] else ""]
 
 
 func _update_hud() -> void:
-	var total := SET_COUNT * NUMBERS_PER_SET
-	var on_floor := 0
-	for b in in_pile:
-		if b:
-			on_floor += 1
+	var total := set_count * NUMBERS_PER_SET
 	var s := int(elapsed)
-	hud_stats.text = "Jeton: %d      Vitrinde: %d/%d      Yığında: %d      Kopya: %d      Süre: %02d:%02d" % [coins, placed, total, on_floor, copies, floori(s / 60.0), s % 60]
+	hud_stats.text = "Jeton: %d      Vitrinde: %d/%d      Yerde: %d      Kopya: %d      Süre: %02d:%02d" % [coins, placed, total, pile_count, copies, floori(s / 60.0), s % 60]
 
-	var parts: Array = []
-	for k in mini(hand.size(), 12):
-		var t: Dictionary = tasos[hand[k]]
-		parts.append("%s%d%s" % [SET_LETTERS[t["grp"]], t["num"], "*" if t["holo"] else ""])
-	hud_hand.text = "Elde (%d/%d): %s" % [hand.size(), _cap(), ", ".join(parts)]
+	if hand.is_empty():
+		hud_hand.text = "Elde (0/%d)" % _cap()
+	else:
+		var parts: Array = []
+		var from := maxi(0, sel - 5)
+		var to := mini(hand.size(), from + 11)
+		for k in range(from, to):
+			var nm := _taso_name(hand[k])
+			parts.append("[%s]" % nm if k == sel else nm)
+		var more := "" if hand.size() <= to - from else "  …"
+		hud_hand.text = "Elde (%d/%d)   Seçili: %s\n%s%s" % [hand.size(), _cap(), _taso_name(hand[sel]), "  ".join(parts), more]
 
 	var kind: String = target.get("kind", "")
 	match kind:
 		"taso":
-			var t: Dictionary = tasos[target["idx"]]
-			var g: int = t["grp"]
-			var name_txt: String = SET_NAMES[g] if skills["renk"]["level"] > 0 else "?"
-			hud_info.text = "%s %d   (%s)%s" % [SET_LETTERS[g], t["num"], name_txt, "   HOLO" if t["holo"] else ""]
+			var i: int = target["idx"]
+			var g: int = tasos[i]["grp"]
+			var set_txt: String = SETS[g]["name"] if skills["renk"]["level"] > 0 else "?"
+			hud_info.text = "%s   (%s)" % [_taso_name(i), set_txt]
 		"shelf":
 			var body: Node = target["body"]
 			var g: int = body.get_meta("grp")
 			var shelf: Node3D = shelves[g]
 			var n := _nearest_slot(shelf.to_local(target["point"]))
 			var slot_txt := "" if n == -1 else ("   yuva %d %s" % [n + 1, "(boş)" if slots[g][n] == -1 else "(dolu)"])
-			hud_info.text = "%s vitrini%s" % [SET_NAMES[g], slot_txt]
+			hud_info.text = "%s vitrini%s" % [SETS[g]["name"], slot_txt]
 		"copy":
 			hud_info.text = "Kopya Kutusu  (+%d jeton/adet)" % COIN_COPY
 		_:
