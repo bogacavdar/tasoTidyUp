@@ -14,7 +14,8 @@ Godot ile yapılan bir "kaostan düzene" toplu dizme oyunu. Oyuncu birinci şah�
 - Taso yüzlerinde set kodu ve numara var. Shader bunları küçük bir rakam/kod atlasından anında oluşturur. Holo tasolar gökkuşağı gibi parlar.
 - Elde birden fazla taso tutulabilir (başta 10, Avuç ile 40). Fare tekerleğiyle seçim yapılır.
 - Zıplama, Shift ile hızlı koşu.
-- 4 yetenek: Renk Gözü, Otomatik Dizme, Avuç (3 seviye), Holo Dedektörü.
+- Her setin kendine ait belirgin bir rengi var (34 renk).
+- 3 yetenek: Otomatik Dizme, Avuç (3 seviye), Holo Dedektörü.
 
 ### Tarayıcıda oyna
 
@@ -32,7 +33,7 @@ Her `main` push'unda GitHub Actions web build alıp GitHub Pages'e yayınlar: ht
 - **Sol tık:** yığından taso al / seçili tasoyu boş yuvaya koy / dolu yuvadan geri al ya da seçiliyle değiştir
 - **Fare tekerleği:** eldeki tasolar arasında seçim yap
 - **Q:** seçili tasoyu bırak, **sağ tık:** elindekilerin hepsini bırak
-- **1-4:** yetenek satın al
+- **1-3:** yetenek satın al
 - **R:** yeniden başla, **Esc:** fareyi serbest bırak
 
 ## Yol haritası

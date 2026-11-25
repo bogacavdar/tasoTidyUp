@@ -51,14 +51,20 @@ const SETS := [
 	{"name": "Kaya Kalesi", "code": "KA"}, {"name": "Dalga Kıyısı", "code": "DK"},
 	{"name": "Volkan Ağzı", "code": "VA"}, {"name": "Çiçek Vadisi", "code": "ÇV"},
 ]
-const PLAIN := Color("d9cfb8")
+const PALETTE := [
+	"e6194b", "3cb44b", "ffe119", "4363d8", "f58231", "911eb4", "42d4f4", "f032e6",
+	"bfef45", "fabed4", "469990", "dcbeff", "9a6324", "fffac8", "800000", "aaffc3",
+	"808000", "ffd8b1", "000075", "a9a9a9", "ffffff", "222222", "ff6f61", "6b5b95",
+	"88b04b", "92a8d1", "955251", "b565a7", "009b77", "dd4124", "45b8ac", "efc050",
+	"5b3a29", "1e5945",
+]  # 34 set için birbirinden belirgin ayrışan renkler
 const RING_EMPTY := Color("1c1917")
 const RING_WRONG := Color("ff2a2a")
 const RING_DONE := Color("3fe06a")
 const BOARD_COLOR := Color("2b2623")
 const BOARD_DONE := Color("27502f")
 
-const SKILL_ORDER := ["renk", "oto", "avuc", "holo"]
+const SKILL_ORDER := ["oto", "avuc", "holo"]
 const AVUC_GRAB := [1, 3, 6, 12]
 const AVUC_CAP := [10, 15, 25, 40]
 
@@ -137,7 +143,6 @@ func _ready() -> void:
 
 func _init_skills() -> void:
 	skills = {
-		"renk": {"name": "Renk Gözü", "desc": "yığındaki tasolar set rengini gösterir", "cost": [20], "level": 0},
 		"oto": {"name": "Otomatik Dizme", "desc": "vitrine tıklayınca elindeki o setin tasoları doğru boş yuvalarına gider", "cost": [60], "level": 0},
 		"avuc": {"name": "Avuç", "desc": "tek tıkla 3/6/12 taso al, el kapasitesi 15/25/40", "cost": [40, 150, 400], "level": 0},
 		"holo": {"name": "Holo Dedektörü", "desc": "gömülü holo tasolar yığının içinden parlar", "cost": [120], "level": 0},
@@ -154,10 +159,7 @@ func _set_color(g: int) -> Color:
 
 func _make_set_colors() -> void:
 	for g in set_count:
-		var h := fmod(g * 0.618034, 1.0)
-		var sat := 0.55 if g % 2 == 0 else 0.75
-		var val := 0.92 if g % 3 != 2 else 0.74
-		set_colors.append(Color.from_hsv(h, sat, val))
+		set_colors.append(Color.html(PALETTE[g % PALETTE.size()]))
 
 
 # ---------------- Taso yüzü atlası ----------------
@@ -477,9 +479,7 @@ func _custom(i: int) -> Color:
 
 
 func _taso_color(i: int) -> Color:
-	if skills["renk"]["level"] > 0:
-		return _set_color(tasos[i]["grp"])
-	return PLAIN
+	return _set_color(tasos[i]["grp"])
 
 
 func _recolor_pile() -> void:
@@ -604,12 +604,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_R:
 				get_tree().reload_current_scene()
 			KEY_1:
-				_try_buy("renk")
-			KEY_2:
 				_try_buy("oto")
-			KEY_3:
+			KEY_2:
 				_try_buy("avuc")
-			KEY_4:
+			KEY_3:
 				_try_buy("holo")
 
 
@@ -875,9 +873,6 @@ func _try_buy(key: String) -> void:
 	coins -= c
 	sk["level"] = lvl + 1
 	_say("%s açıldı!" % sk["name"])
-	if key == "renk":
-		_recolor_pile()
-		_rebuild_hand()
 
 
 func _say(s: String) -> void:
@@ -920,7 +915,7 @@ func _build_hud() -> void:
 	hud_hand = _mk_label(layer, Vector2(20, 50), 18, Color(1, 1, 1, 0.9))
 	hud_skills = _mk_label(layer, Vector2(20, 760), 17, Color(1, 1, 1, 0.9))
 	var help := _mk_label(layer, Vector2(1040, 14), 14, Color(1, 1, 1, 0.6))
-	help.text = "WASD yürü  •  Shift koş  •  Boşluk zıpla  •  Fare bak\nSol tık: taso al / yuvaya koy / dolu yuvadan geri al veya değiştir\nTekerlek: eldeki tasoyu seç\nQ: seçiliyi bırak  •  Sağ tık: hepsini bırak\n1-4: yetenek satın al  •  R: yeniden  •  Esc: fareyi bırak"
+	help.text = "WASD yürü  •  Shift koş  •  Boşluk zıpla  •  Fare bak\nSol tık: taso al / yuvaya koy / dolu yuvadan geri al veya değiştir\nTekerlek: eldeki tasoyu seç\nQ: seçiliyi bırak  •  Sağ tık: hepsini bırak\n1-3: yetenek satın al  •  R: yeniden  •  Esc: fareyi bırak"
 
 
 func _taso_name(i: int) -> String:
@@ -950,7 +945,7 @@ func _update_hud() -> void:
 		"taso":
 			var i: int = target["idx"]
 			var g: int = tasos[i]["grp"]
-			var set_txt: String = SETS[g]["name"] if skills["renk"]["level"] > 0 else "?"
+			var set_txt: String = SETS[g]["name"]
 			hud_info.text = "%s   (%s)" % [_taso_name(i), set_txt]
 		"shelf":
 			var body: Node = target["body"]
