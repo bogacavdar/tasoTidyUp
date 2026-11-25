@@ -1,6 +1,6 @@
 # Taso Kaosu (çalışma adı)
 
-Godot ile yapılan bir "kaostan düzene" toplu dizme oyunu. Oyuncu yere saçılmış binlerce tasoyu setlerine ve numaralarına göre albümlere diziyor, kazandığı jetonlarla yetenek açıyor ve hızlanıyor.
+Godot ile yapılan bir "kaostan düzene" toplu dizme oyunu. Oyuncu birinci şahıs bakışla, yere yığılmış binlerce tasoyu setlerine ve numaralarına göre vitrinlere diziyor, kazandığı jetonlarla yetenek açıyor ve hızlanıyor.
 
 ## Şu anki durum: Aşama 1, 3D birinci şahıs prototip
 
