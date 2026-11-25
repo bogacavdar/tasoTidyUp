@@ -3,3 +3,4 @@
 export/
 *.tmp
 build/
+tools/comfy/out/
