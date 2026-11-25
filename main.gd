@@ -289,10 +289,11 @@ func _tex(id: String, kind: String) -> Texture2D:
 
 
 ## Poly Haven dokusu varsa gerçekçi PBR malzeme; yoksa düz renk (fallback)
-func _pbr(id: String, fallback: Color, scale: float, tint: Color = Color.WHITE, rough: float = 0.75) -> StandardMaterial3D:
+func _pbr(id: String, fallback: Color, scale: float, tint: Color = Color.WHITE, rough: float = 0.75, use_rough_map: bool = true, specular: float = 0.5) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.albedo_color = fallback
 	m.roughness = rough
+	m.metallic_specular = specular
 	var d := _tex(id, "diff")
 	if d != null:
 		m.albedo_color = tint
@@ -305,7 +306,7 @@ func _pbr(id: String, fallback: Color, scale: float, tint: Color = Color.WHITE, 
 		if n != null:
 			m.normal_enabled = true
 			m.normal_texture = n
-		var r := _tex(id, "rough")
+		var r := _tex(id, "rough") if use_rough_map else null
 		if r != null:
 			m.roughness_texture = r
 			m.roughness = 1.0
@@ -313,7 +314,8 @@ func _pbr(id: String, fallback: Color, scale: float, tint: Color = Color.WHITE, 
 
 
 func _make_env_materials() -> void:
-	mat_floor = _pbr("diagonal_parquet", Color("7a5a3c"), 0.5)
+	# parke: cilalı dokunun parlaklık haritası göz alıyordu; mat, düşük yansımalı
+	mat_floor = _pbr("diagonal_parquet", Color("7a5a3c"), 0.5, Color(0.9, 0.88, 0.85), 0.88, false, 0.18)
 	mat_wall = _pbr("beige_wall_001", Color("d9c9ae"), 0.3, Color(1.0, 0.97, 0.92))
 	mat_ceiling = _pbr("beige_wall_001", Color("ece5d8"), 0.3, Color(1.0, 1.0, 1.0))
 	mat_wood = _pbr("dark_wood", Color("5a3d28"), 0.9, Color.WHITE, 0.5)
@@ -425,9 +427,9 @@ func _build_world() -> void:
 	env.ambient_light_color = Color(1.0, 0.95, 0.88)
 	env.ambient_light_energy = 0.6
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES
-	env.tonemap_exposure = 1.15
+	env.tonemap_exposure = 1.05
 	env.glow_enabled = true
-	env.glow_intensity = 0.5
+	env.glow_intensity = 0.3
 	env.glow_bloom = 0.05
 	env.adjustment_enabled = true
 	env.adjustment_saturation = 1.08
