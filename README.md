@@ -4,7 +4,7 @@ Godot ile yapılan bir "kaostan düzene" toplu dizme oyunu. Oyuncu birinci şah�
 
 ## Şu anki durum: Aşama 2, dev depo ve 5100 benzersiz taso
 
-- 60×50 m'lik depo. 11 kaotik yığın ve yere saçılmış tasolar.
+- 60×50 m'lik depo. Bütün tasolar zemine tamamen rastgele saçılmış.
 - **5100 benzersiz taso:** 34 set × 150 numara, kopya yok. Yaklaşık %4'ü holo.
 - Her setin duvarda bir vitrini var (15 × 10 yuva), toplam 34 vitrin.
 - Yuvalarda numara yazmıyor. Her taso her yuvaya konabilir, sırayı oyuncu kurar (soldan sağa, yukarıdan aşağı 1-150).

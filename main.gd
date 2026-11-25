@@ -8,7 +8,7 @@ extends Node3D
 # ---------------- Ayarlar ----------------
 const NUMBERS_PER_SET := 150
 const HOLO_CHANCE := 0.04
-const SCATTER_RATIO := 0.06   # yığın dışına, yere saçılan oran
+const WALL_MARGIN := 1.6      # vitrinlerin önünde boş bırakılan şerit
 
 const TASO_R := 0.12
 const TASO_H := 0.014
@@ -57,12 +57,6 @@ const RING_WRONG := Color("ff2a2a")
 const RING_DONE := Color("3fe06a")
 const BOARD_COLOR := Color("2b2623")
 const BOARD_DONE := Color("27502f")
-
-const PILES := [
-	Vector3(-18, 2.2, -11), Vector3(-6, 2.0, -12), Vector3(6, 2.2, -10), Vector3(18, 2.0, -12),
-	Vector3(-20, 2.1, 0), Vector3(-7, 2.3, 1), Vector3(7, 2.1, -1), Vector3(20, 2.2, 1),
-	Vector3(-14, 2.0, 12), Vector3(0, 2.3, 11), Vector3(14, 2.1, 12),
-]  # x, yarıçap, z
 
 const SKILL_ORDER := ["renk", "oto", "avuc", "holo"]
 const AVUC_GRAB := [1, 3, 6, 12]
@@ -284,9 +278,6 @@ func _build_world() -> void:
 	var hw := ROOM_W / 2.0
 	var hd := ROOM_D / 2.0
 	_box(self, Vector3(ROOM_W + 0.6, 0.2, ROOM_D + 0.6), Vector3(0, -0.1, 0), Color("4a3a2e"), "floor")
-	for p in PILES:
-		var pv: Vector3 = p
-		_box(self, Vector3(pv.y * 2.2, 0.01, pv.y * 2.2), Vector3(pv.x, 0.005, pv.z), Color("6b2e2e"), "floor")
 	var wall := Color("5d5249")
 	_box(self, Vector3(ROOM_W + 0.6, WALL_H, 0.3), Vector3(0, WALL_H / 2, -hd - 0.15), wall, "wall")
 	_box(self, Vector3(ROOM_W + 0.6, WALL_H, 0.3), Vector3(0, WALL_H / 2, hd + 0.15), wall, "wall")
@@ -436,18 +427,11 @@ func _spawn_tasos() -> void:
 		tasos.append({"grp": p.x, "num": p.y, "holo": holo})
 		if holo:
 			holo_list.append(i)
-		var pos: Vector3
-		if randf() < SCATTER_RATIO:
-			pos = Vector3(randf_range(-ROOM_W / 2 + 2, ROOM_W / 2 - 2), BASE_Y, randf_range(-ROOM_D / 2 + 2, ROOM_D / 2 - 2))
-		else:
-			var pile: Vector3 = PILES[randi() % PILES.size()]
-			var radius := pile.y
-			var heap_h := 0.5
-			var ang := randf() * TAU
-			var rr := sqrt(randf()) * radius
-			var heap := heap_h * (1.0 - rr / radius)
-			pos = Vector3(pile.x + cos(ang) * rr, BASE_Y + randf() * heap, pile.z + sin(ang) * rr)
-		var b := Basis(Vector3.UP, randf() * TAU) * Basis(Vector3.RIGHT, randf_range(-0.45, 0.45))
+		# Tüm zemine tamamen rastgele saçılır; üst üste binenler çakışmasın diye hafif yükseklik farkı
+		var hw := ROOM_W / 2.0 - WALL_MARGIN
+		var hd := ROOM_D / 2.0 - WALL_MARGIN
+		var pos := Vector3(randf_range(-hw, hw), BASE_Y + randf() * 0.04, randf_range(-hd, hd))
+		var b := Basis(Vector3.UP, randf() * TAU) * Basis(Vector3.RIGHT, randf_range(-0.12, 0.12))
 		pile_xf.append(Transform3D(b, pos))
 		in_pile.append(true)
 		paid.append(false)
