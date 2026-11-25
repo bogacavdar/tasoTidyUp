@@ -1,0 +1,1 @@
+# Poly Haven (CC0) model kimlikleri. tools/fetch_models.py bunları 1K glTF olarak assets/models/<id>/ içine indirir.
