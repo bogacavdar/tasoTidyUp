@@ -2,14 +2,15 @@
 
 Godot ile yapılan bir "kaostan düzene" toplu dizme oyunu. Oyuncu yere saçılmış binlerce tasoyu setlerine ve numaralarına göre albümlere diziyor, kazandığı jetonlarla yetenek açıyor ve hızlanıyor.
 
-## Şu anki durum: Aşama 1, çirkin prototip
+## Şu anki durum: Aşama 1, 3D birinci şahıs prototip
 
-Bu sürümün tek amacı şu soruya cevap bulmak: **Binlerce tasoyu dizmek eğlenceli mi?** Bu yüzden görsel yok, tasolar numaralı dairelerden ibaret.
+Bu sürümün tek amacı şu soruya cevap bulmak: **Binlerce tasoyu dizmek eğlenceli mi?** Bu yüzden yaratık çizimi yok, tasolar düz renkli diskler.
 
-- 500 taso, 4 set × 40 numara (160 benzersiz, geri kalanı kopya), yaklaşık %5'i holo
-- Sürükle-bırak ile albümdeki doğru yuvaya yerleştirme
-- Kopya Kutusu, tamamlanan albüm bonusu
-- 4 yetenek: Renk Gözü, Otomatik Numara, Avuç (3 seviye), Holo Dedektörü
+- Odanın ortasında 500 tasoluk bir yığın var. 4 set × 40 numara (160 benzersiz, geri kalanı kopya), yaklaşık %5'i holo.
+- Duvarlarda her set için bir vitrin (8 × 5 numaralı yuva).
+- Yürü, yığındaki tasoya bak ve al, vitrindeki doğru yuvaya yerleştir.
+- Kopya Kutusu, tamamlanan vitrin bonusu.
+- 4 yetenek: Renk Gözü, Otomatik Numara, Avuç (3 seviye), Holo Dedektörü.
 
 ### Tarayıcıda oyna
 
@@ -23,14 +24,15 @@ Her `main` push'unda GitHub Actions web build alıp GitHub Pages'e yayınlar: ht
 
 ### Kontroller
 
-- **Sol tık basılı tut:** taso al. Albümdeki doğru yuvaya bırak.
-- **Yere bırak:** kendi ara yığınlarını yap.
-- **Kopya Kutusu:** albümde yeri dolu olan tasolar.
-- **R:** yeniden başla.
+- **WASD:** yürü, **Shift:** koş, **fare:** bak
+- **Sol tık:** yığından taso al / vitrindeki yuvaya yerleştir / Kopya Kutusu'na at
+- **Sağ tık veya Q:** elindekileri baktığın yere bırak (kendi ara yığınlarını yap)
+- **1-4:** yetenek satın al
+- **R:** yeniden başla, **Esc:** fareyi serbest bırak
 
 ## Yol haritası
 
-0. Konsept sayfası: 2D tepeden masa görünümü seçildi
+0. Konsept: 3D birinci şahıs, tasolar raflara ve vitrinlere dizilir
 1. **Çirkin prototip ← buradayız**
 2. Veri şeması + 5000 taso performans testi (MultiMesh)
 3. Yetenek ağacı ve ekonomi (15-20 yetenek)

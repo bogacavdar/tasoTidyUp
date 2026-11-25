@@ -34,10 +34,15 @@ jobs:
           unzip -q Godot_v${V}_export_templates.tpz
           mv templates/* ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable/
 
+      - name: Script kontrolü
+        run: |
+          timeout 120 ./godot --headless --editor --quit || true
+          ./godot --headless --path . --check-only --script res://main.gd 2>&1 | tee check.log
+          ! grep -q "SCRIPT ERROR\|Parse Error" check.log
+
       - name: Web export
         run: |
           mkdir -p build
-          timeout 120 ./godot --headless --editor --quit || true
           ./godot --headless --export-release "Web" build/index.html
           touch build/.nojekyll
 
