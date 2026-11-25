@@ -1,31 +1,30 @@
 extends Node3D
-## Taso Kaosu — 3D birinci şahıs prototip (Aşama 2).
-## Büyük bir depo, birkaç kaotik taso yığını (5000 taso), duvarlarda 12 set vitrini.
-## Oyuncu yürür/koşar/zıplar, yığınlardan taso toplar, fare tekerleğiyle elindekini seçer
-## ve vitrindeki doğru numaralı yuvaya yerleştirir.
+## Taso Kaosu — 3D birinci şahıs prototip.
+## Dev bir depo, kaotik yığınlarda 5000 BENZERSİZ taso (25 set x 200), duvarlarda 25 vitrin.
+## Her taso her yuvaya konabilir; sırayı oyuncu kurar. Yanlış yerdekiler kırmızı,
+## tamamen doğru dizilen vitrin yeşil olur.
 ## Sahne tamamen koddan kuruluyor; dışarıdan model yok.
 
 # ---------------- Ayarlar ----------------
-const TASO_COUNT := 5000
-const NUMBERS_PER_SET := 60
+const NUMBERS_PER_SET := 200
 const HOLO_CHANCE := 0.04
-const SCATTER_RATIO := 0.08   # yığın dışına, yere saçılan oran
+const SCATTER_RATIO := 0.06   # yığın dışına, yere saçılan oran
 
 const TASO_R := 0.12
 const TASO_H := 0.014
 const BASE_Y := 0.02
-const REACH := 3.4
+const REACH := 3.6
 const GRAB_RADIUS := 0.4
 const CELL := 1.0              # uzamsal ızgara hücre boyu
 
-const ROOM_W := 40.0           # x
-const ROOM_D := 30.0           # z
-const WALL_H := 6.0
+const ROOM_W := 60.0           # x
+const ROOM_D := 50.0           # z
+const WALL_H := 7.0
 
-const SLOT_COLS := 10
-const SLOT_ROWS := 6
-const SLOT_GAP := 0.3
-const BOARD_Y := 1.4
+const SLOT_COLS := 20
+const SLOT_ROWS := 10
+const SLOT_GAP := 0.28
+const BOARD_Y := 1.86          # vitrin panosunun orta yüksekliği
 
 const WALK_SPEED := 4.5
 const SPRINT_MULT := 2.0
@@ -34,18 +33,19 @@ const GRAVITY := 12.0
 const MOUSE_SENS := 0.0025
 
 const SETS := [
-	{"name": "Kor Vadisi", "code": "KV", "color": Color("e0603a")},
-	{"name": "Derin Su", "code": "DS", "color": Color("3a8fe0")},
-	{"name": "Taş Kök", "code": "TK", "color": Color("7bb04a")},
-	{"name": "Gece Rüzgârı", "code": "GR", "color": Color("9a6ae6")},
-	{"name": "Buz Tepesi", "code": "BT", "color": Color("8fd3e8")},
-	{"name": "Şimşek Ovası", "code": "ŞO", "color": Color("f2c94c")},
-	{"name": "Kum Çölü", "code": "KÇ", "color": Color("d9a066")},
-	{"name": "Mantar Ormanı", "code": "MO", "color": Color("c0763b")},
-	{"name": "Demir Dağ", "code": "DD", "color": Color("9aa0aa")},
-	{"name": "Mercan Koyu", "code": "MK", "color": Color("ff7fa0")},
-	{"name": "Gölge Mağara", "code": "GM", "color": Color("7f86b5")},
-	{"name": "Yıldız Bahçe", "code": "YB", "color": Color("2fbfa5")},
+	{"name": "Kor Vadisi", "code": "KV"}, {"name": "Derin Su", "code": "DS"},
+	{"name": "Taş Kök", "code": "TK"}, {"name": "Gece Rüzgârı", "code": "GR"},
+	{"name": "Buz Tepesi", "code": "BT"}, {"name": "Şimşek Ovası", "code": "ŞO"},
+	{"name": "Kum Çölü", "code": "KÇ"}, {"name": "Mantar Ormanı", "code": "MO"},
+	{"name": "Demir Dağ", "code": "DD"}, {"name": "Mercan Koyu", "code": "MK"},
+	{"name": "Gölge Mağara", "code": "GM"}, {"name": "Yıldız Bahçe", "code": "YB"},
+	{"name": "Lav Gölü", "code": "LG"}, {"name": "Sis Bataklığı", "code": "SB"},
+	{"name": "Kristal Vadi", "code": "KR"}, {"name": "Ay Tapınağı", "code": "AT"},
+	{"name": "Bulut Adası", "code": "BA"}, {"name": "Kızıl Kanyon", "code": "KK"},
+	{"name": "Zümrüt Orman", "code": "ZO"}, {"name": "Fırtına Burnu", "code": "FB"},
+	{"name": "Kehribar Köy", "code": "KH"}, {"name": "Gümüş Nehir", "code": "GN"},
+	{"name": "Yosun Mağara", "code": "YM"}, {"name": "Güneş Sarayı", "code": "GS"},
+	{"name": "Kuyruklu Yıldız", "code": "KY"},
 ]
 const PLAIN := Color("d9cfb8")
 const RING_EMPTY := Color("1c1917")
@@ -55,8 +55,9 @@ const BOARD_COLOR := Color("2b2623")
 const BOARD_DONE := Color("27502f")
 
 const PILES := [
-	Vector3(-9, 2.0, -5), Vector3(0, 1.8, -6), Vector3(9, 2.1, -4),
-	Vector3(-9, 1.9, 5), Vector3(1, 2.2, 4), Vector3(10, 1.8, 6),
+	Vector3(-18, 2.2, -11), Vector3(-6, 2.0, -12), Vector3(6, 2.2, -10), Vector3(18, 2.0, -12),
+	Vector3(-20, 2.1, 0), Vector3(-7, 2.3, 1), Vector3(7, 2.1, -1), Vector3(20, 2.2, 1),
+	Vector3(-14, 2.0, 12), Vector3(0, 2.3, 11), Vector3(14, 2.1, 12),
 ]  # x, yarıçap, z
 
 const SKILL_ORDER := ["renk", "oto", "avuc", "holo"]
@@ -65,11 +66,11 @@ const AVUC_CAP := [10, 15, 25, 40]
 
 const COIN_PLACE := 2
 const COIN_HOLO := 10
-const COIN_COPY := 1
-const COIN_SET := 80
+const COIN_SET := 200
 
 # ---------------- Durum ----------------
 var set_count := SETS.size()
+var set_colors: Array[Color] = []
 var tasos: Array = []                 # Dictionary: grp, num, holo
 var pile_xf: Array[Transform3D] = []  # yığındaki son konum
 var in_pile: Array[bool] = []
@@ -83,7 +84,6 @@ var skills := {}
 var coins := 0
 var placed := 0                       # vitrinlerdeki taso sayısı
 var correct := 0                      # doğru yerdeki taso sayısı
-var copies := 0
 var elapsed := 0.0
 var anim := 0.0
 var finished := false
@@ -104,7 +104,6 @@ var holo_mm: MultiMesh
 var holo_mmi: MultiMeshInstance3D
 var holo_ring_mat: StandardMaterial3D
 var atlas_vp: SubViewport
-var atlas_cols := 1
 var shelves: Array = []
 var shelf_titles: Array = []
 var ring_mm: MultiMesh
@@ -126,6 +125,7 @@ var hud_center: Label
 func _ready() -> void:
 	randomize()
 	_init_skills()
+	_make_set_colors()
 	_build_atlas()
 	_make_taso_material()
 	_build_world()
@@ -150,52 +150,46 @@ func _uid(t: Dictionary) -> int:
 
 
 func _set_color(g: int) -> Color:
-	return SETS[g]["color"]
+	return set_colors[g]
+
+
+func _make_set_colors() -> void:
+	for g in set_count:
+		var h := fmod(g * 0.618034, 1.0)
+		var sat := 0.55 if g % 2 == 0 else 0.75
+		var val := 0.92 if g % 3 != 2 else 0.74
+		set_colors.append(Color.from_hsv(h, sat, val))
 
 
 # ---------------- Taso yüzü atlası ----------------
-# Her benzersiz taso için 64x64'lük bir hücre: beyaz daire, set kodu ve numara.
-# Bir SubViewport bir kez çiziyor, shader bu dokuyu kullanıyor.
+# Küçük bir doku: 1. satırda 0-9 rakamları, sonraki satırlarda set kodları (hücre 128x64).
+# Shader her tasonun numarasını ve set kodunu bu parçalardan anında birleştirir.
 func _build_atlas() -> void:
-	var total := set_count * NUMBERS_PER_SET
-	atlas_cols = int(ceil(sqrt(float(total))))
-	var cell := 64
+	var cw := 128
+	var ch := 64
 	atlas_vp = SubViewport.new()
-	atlas_vp.size = Vector2i(atlas_cols * cell, atlas_cols * cell)
+	atlas_vp.size = Vector2i(10 * cw, 4 * ch)
 	atlas_vp.transparent_bg = true
 	atlas_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	add_child(atlas_vp)
 	var root := Control.new()
 	root.size = Vector2(atlas_vp.size)
 	atlas_vp.add_child(root)
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(1, 1, 1, 0.92)
-	sb.set_corner_radius_all(24)
-	for u in total:
-		var g := floori(float(u) / NUMBERS_PER_SET)
-		var n := u % NUMBERS_PER_SET + 1
-		var origin := Vector2((u % atlas_cols) * cell, floori(float(u) / atlas_cols) * cell)
-		var disc := Panel.new()
-		disc.add_theme_stylebox_override("panel", sb)
-		disc.position = origin + Vector2(8, 8)
-		disc.size = Vector2(48, 48)
-		root.add_child(disc)
-		var code := Label.new()
-		code.text = SETS[g]["code"]
-		code.position = origin + Vector2(0, 10)
-		code.size = Vector2(cell, 14)
-		code.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		code.add_theme_font_size_override("font_size", 11)
-		code.add_theme_color_override("font_color", _set_color(g).darkened(0.45))
-		root.add_child(code)
-		var num := Label.new()
-		num.text = str(n)
-		num.position = origin + Vector2(0, 22)
-		num.size = Vector2(cell, 30)
-		num.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		num.add_theme_font_size_override("font_size", 24)
-		num.add_theme_color_override("font_color", Color(0.08, 0.08, 0.08))
-		root.add_child(num)
+	var texts: Array = []
+	for dgt in 10:
+		texts.append([str(dgt), Vector2(dgt * cw, 0), 58])
+	for g in set_count:
+		texts.append([SETS[g]["code"], Vector2((g % 10) * cw, (1 + floori(g / 10.0)) * ch), 50])
+	for e in texts:
+		var l := Label.new()
+		l.text = e[0]
+		l.position = e[1]
+		l.size = Vector2(cw, ch)
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		l.add_theme_font_size_override("font_size", e[2])
+		l.add_theme_color_override("font_color", Color.WHITE)
+		root.add_child(l)
 	_freeze_atlas.call_deferred()
 
 
@@ -215,7 +209,7 @@ func _make_taso_material() -> void:
 	taso_mat = ShaderMaterial.new()
 	taso_mat.shader = load("res://taso.gdshader")
 	taso_mat.set_shader_parameter("atlas", atlas_vp.get_texture())
-	taso_mat.set_shader_parameter("cols", float(atlas_cols))
+	taso_mat.set_shader_parameter("nper", float(NUMBERS_PER_SET))
 	taso_mat.set_shader_parameter("radius", TASO_R)
 
 
@@ -263,19 +257,19 @@ func _build_world() -> void:
 	env.background_color = Color("1d1a18")
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(0.9, 0.85, 0.8)
-	env.ambient_light_energy = 0.6
+	env.ambient_light_energy = 0.75
 	we.environment = env
 	add_child(we)
 
 	var sun := DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-60, 30, 0)
-	sun.light_energy = 0.6
+	sun.light_energy = 0.8
 	add_child(sun)
-	for x in [-12.0, 0.0, 12.0]:
-		for z in [-7.0, 7.0]:
+	for x in [-18.0, 0.0, 18.0]:
+		for z in [-11.0, 11.0]:
 			var lamp := OmniLight3D.new()
 			lamp.position = Vector3(x, WALL_H - 0.6, z)
-			lamp.omni_range = 16.0
+			lamp.omni_range = 24.0
 			lamp.light_energy = 1.4
 			lamp.light_color = Color(1, 0.92, 0.8)
 			add_child(lamp)
@@ -292,15 +286,15 @@ func _build_world() -> void:
 	_box(self, Vector3(0.3, WALL_H, ROOM_D + 0.6), Vector3(-hw - 0.15, WALL_H / 2, 0), wall, "wall")
 	_box(self, Vector3(0.3, WALL_H, ROOM_D + 0.6), Vector3(hw + 0.15, WALL_H / 2, 0), wall, "wall")
 
-	# 12 vitrin: kuzey 4, güney 4, doğu 2, batı 2
+	# 25 vitrin: kuzey 8, güney 8, doğu 5, batı 5 yer var; ilk 25'i kullanılır
 	var placements: Array = []
-	for x in [-13.5, -4.5, 4.5, 13.5]:
-		placements.append([Vector3(x, 0, -hd + 0.05), 0.0])
-	for x in [-13.5, -4.5, 4.5, 13.5]:
-		placements.append([Vector3(x, 0, hd - 0.05), PI])
-	for z in [-5.0, 5.0]:
+	for k in 8:
+		placements.append([Vector3(-24.5 + 7.0 * k, 0, -hd + 0.05), 0.0])
+	for k in 8:
+		placements.append([Vector3(-24.5 + 7.0 * k, 0, hd - 0.05), PI])
+	for z in [-16.0, -8.0, 0.0, 8.0, 16.0]:
 		placements.append([Vector3(hw - 0.05, 0, z), -PI / 2])
-	for z in [-5.0, 5.0]:
+	for z in [-16.0, -8.0, 0.0, 8.0, 16.0]:
 		placements.append([Vector3(-hw + 0.05, 0, z), PI / 2])
 
 	var board_w := SLOT_COLS * SLOT_GAP + 0.3
@@ -367,18 +361,6 @@ func _build_world() -> void:
 		set_bonus_paid.append(false)
 		_update_title(g)
 
-	# Kopya kutuları
-	for x in [-4.5, 4.5]:
-		_box(self, Vector3(1.0, 0.7, 1.0), Vector3(x, 0.35, 0), Color("6a4c86"), "copy")
-		var cl := Label3D.new()
-		cl.text = "KOPYA KUTUSU"
-		cl.font_size = 48
-		cl.pixel_size = 0.004
-		cl.outline_size = 10
-		cl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		cl.position = Vector3(x, 1.1, 0)
-		add_child(cl)
-
 
 func _slot_local(n: int) -> Vector3:
 	var c := n % SLOT_COLS
@@ -408,7 +390,7 @@ func _update_title(g: int) -> void:
 
 func _build_player() -> void:
 	player = CharacterBody3D.new()
-	player.position = Vector3(0, 0.95, 11)
+	player.position = Vector3(0, 0.95, 19)
 	var cs := CollisionShape3D.new()
 	var cap := CapsuleShape3D.new()
 	cap.radius = 0.35
@@ -440,8 +422,6 @@ func _spawn_tasos() -> void:
 	for g in set_count:
 		for n in NUMBERS_PER_SET:
 			pairs.append(Vector2i(g, n + 1))
-	while pairs.size() < TASO_COUNT:
-		pairs.append(Vector2i(randi() % set_count, randi() % NUMBERS_PER_SET + 1))
 	pairs.shuffle()
 	for i in pairs.size():
 		var p: Vector2i = pairs[i]
@@ -695,8 +675,6 @@ func _on_use() -> void:
 			_grab(target["idx"])
 		"shelf":
 			_use_shelf(target["body"], target["point"])
-		"copy":
-			_use_copy()
 
 
 func _grab(first: int) -> void:
@@ -728,12 +706,6 @@ func _grab(first: int) -> void:
 func _is_correct(g: int, n: int) -> bool:
 	var i: int = slots[g][n]
 	return i != -1 and tasos[i]["grp"] == g and tasos[i]["num"] - 1 == n
-
-
-## Bu tasonun doğru yerinde aynısı zaten duruyor mu? (o zaman kopyadır)
-func _is_copy(i: int) -> bool:
-	var t: Dictionary = tasos[i]
-	return _is_correct(t["grp"], t["num"] - 1) and slots[t["grp"]][t["num"] - 1] != i
 
 
 func _use_shelf(body: Node, hp: Vector3) -> void:
@@ -852,27 +824,6 @@ func _check_shelf(g: int) -> void:
 	finished = not shelf_done.has(false)
 
 
-func _use_copy() -> void:
-	if hand.is_empty():
-		_say("Kopyaları buraya at")
-		return
-	var keep: Array = []
-	var cnt := 0
-	for i in hand:
-		if _is_copy(i):
-			copies += 1
-			cnt += 1
-			coins += COIN_COPY
-		else:
-			keep.append(i)
-	hand = keep
-	if cnt > 0:
-		_say("+%d kopya kutuya gitti" % cnt)
-	else:
-		_say("Elindekilerin aynısı henüz doğru yerinde değil, kopya sayılmaz")
-	sel = clampi(sel, 0, maxi(hand.size() - 1, 0))
-	_rebuild_hand()
-
 ## only_selected: Q yalnızca seçili tasoyu, sağ tık hepsini bırakır.
 func _drop(only_selected: bool) -> void:
 	if hand.is_empty():
@@ -989,7 +940,7 @@ func _taso_name(i: int) -> String:
 func _update_hud() -> void:
 	var total := set_count * NUMBERS_PER_SET
 	var s := int(elapsed)
-	hud_stats.text = "Jeton: %d      Doğru: %d/%d      Vitrinde: %d      Yerde: %d      Kopya: %d      Süre: %02d:%02d" % [coins, correct, total, placed, pile_count, copies, floori(s / 60.0), s % 60]
+	hud_stats.text = "Jeton: %d      Doğru: %d/%d      Vitrinde: %d      Yerde: %d      Süre: %02d:%02d" % [coins, correct, total, placed, pile_count, floori(s / 60.0), s % 60]
 
 	if hand.is_empty():
 		hud_hand.text = "Elde (0/%d)" % _cap()
@@ -1019,8 +970,6 @@ func _update_hud() -> void:
 			if n != -1:
 				slot_txt = "   boş yuva" if slots[g][n] == -1 else "   " + _taso_name(slots[g][n])
 			hud_info.text = "%s vitrini%s" % [SETS[g]["name"], slot_txt]
-		"copy":
-			hud_info.text = "Kopya Kutusu  (+%d jeton/adet)" % COIN_COPY
 		_:
 			hud_info.text = ""
 
