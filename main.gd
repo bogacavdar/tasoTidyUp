@@ -392,7 +392,7 @@ func _build_world() -> void:
 		_mesh_box(leaf, Vector3(0.06, DOOR_H - 0.15, 0.07), Vector3(-sx * (DOOR_W / 2.0 - 0.1), DOOR_H / 2, 0), _mat(frame_col))
 	_mesh_box(self, Vector3(DOOR_W + 0.6, 0.2, 0.45), Vector3(0, DOOR_H + 0.1, hd + 0.15), _mat(frame_col))
 	for side in [1.0, -1.0]:
-		var sign_z := hd + 0.15 + side * 0.25
+		var sign_z: float = hd + 0.15 + side * 0.25
 		var board := _mesh_box(self, Vector3(9.0, 1.4, 0.12), Vector3(0, DOOR_H + 1.3, sign_z), _mat(Color("8a1f2b")))
 		board.position.z = sign_z
 		var sl := Label3D.new()
@@ -441,7 +441,7 @@ func _build_world() -> void:
 	var rail_glass := glass_mat
 	for sx in [-1.0, 1.0]:
 		var seg_len := hw - 1.2
-		var cx := sx * (1.2 + seg_len / 2.0)
+		var cx: float = sx * (1.2 + seg_len / 2.0)
 		var rail := _box(self, Vector3(seg_len, 1.0, 0.05), Vector3(cx, MEZZ_Y + 0.5, MEZZ_EDGE_Z - 0.08), Color("cfe8f0"), "wall")
 		(rail.get_child(0) as MeshInstance3D).material_override = rail_glass
 		_mesh_box(self, Vector3(seg_len, 0.07, 0.1), Vector3(cx, MEZZ_Y + 1.03, MEZZ_EDGE_Z - 0.08), trim)
