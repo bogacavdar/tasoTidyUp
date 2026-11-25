@@ -25,11 +25,13 @@ const DOOR_H := 3.6
 const MEZZ_Y := 5.4            # asma kat zemin yüksekliği
 const MEZZ_EDGE_Z := -10.0     # asma kat z=-25 ile bu değer arasında
 const MEZZ_SHARE := 0.2        # tasoların asma kata saçılan oranı
-const SPIRAL_C := Vector2(0.0, -7.0)   # spiral merdiven merkezi (x, z)
-const SPIRAL_R := 2.3          # dış yarıçap
+const STAIR_X := 8.0           # iki kollu merdiven: x = -8 ve +8
+const STAIR_W := 2.4           # merdiven genişliği
+const STAIR_Z0 := -1.0         # merdivenin başladığı z (zemin kat)
+const STAIR_STEPS := 30
 const STAND_X := [-15.0, -5.0, 5.0, 15.0]
 const STAND_Z := 8.0
-const COLUMN_X := [-28.0, -20.0, -12.0, -5.0, 5.0, 12.0, 20.0, 28.0]
+const COLUMN_X := [-28.0, -20.0, -12.0, -4.0, 4.0, 12.0, 20.0, 28.0]
 
 const SLOT_COLS := 10
 const SLOT_ROWS := 15
@@ -137,6 +139,17 @@ var ring_mm: MultiMesh
 var lip_mm: MultiMesh
 var hover_ring: MeshInstance3D
 var glass_mat: StandardMaterial3D
+var mat_floor: StandardMaterial3D
+var mat_wall: StandardMaterial3D
+var mat_ceiling: StandardMaterial3D
+var mat_wood: StandardMaterial3D
+var mat_wood_fine: StandardMaterial3D
+var mat_paint: StandardMaterial3D
+var mat_sidewalk: StandardMaterial3D
+var mat_road: StandardMaterial3D
+var mat_marble: StandardMaterial3D
+var board_tint := Color.WHITE
+var board_done_tint := Color.WHITE
 var led_mat: StandardMaterial3D
 var sky_mat: StandardMaterial3D
 var board_mats: Array = []
@@ -268,7 +281,50 @@ func _make_taso_material() -> void:
 	taso_mat.set_shader_parameter("radius", TASO_R)
 
 
+func _tex(id: String, kind: String) -> Texture2D:
+	var path := "res://assets/tex/%s_%s.jpg" % [id, kind]
+	if ResourceLoader.exists(path):
+		return load(path)
+	return null
+
+
+## Poly Haven dokusu varsa gerçekçi PBR malzeme; yoksa düz renk (fallback)
+func _pbr(id: String, fallback: Color, scale: float, tint: Color = Color.WHITE, rough: float = 0.75) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_color = fallback
+	m.roughness = rough
+	var d := _tex(id, "diff")
+	if d != null:
+		m.albedo_color = tint
+		m.albedo_texture = d
+		m.uv1_triplanar = true
+		m.uv1_world_triplanar = true
+		m.uv1_scale = Vector3.ONE * scale
+		m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+		var n := _tex(id, "nor")
+		if n != null:
+			m.normal_enabled = true
+			m.normal_texture = n
+		var r := _tex(id, "rough")
+		if r != null:
+			m.roughness_texture = r
+			m.roughness = 1.0
+	return m
+
+
 func _make_env_materials() -> void:
+	mat_floor = _pbr("diagonal_parquet", Color("7a5a3c"), 0.5)
+	mat_wall = _pbr("beige_wall_001", Color("d9c9ae"), 0.3, Color(1.0, 0.97, 0.92))
+	mat_ceiling = _pbr("beige_wall_001", Color("ece5d8"), 0.3, Color(1.0, 1.0, 1.0))
+	mat_wood = _pbr("dark_wood", Color("5a3d28"), 0.9, Color.WHITE, 0.5)
+	mat_wood_fine = _pbr("fine_grained_wood", Color("8a6240"), 1.2, Color.WHITE, 0.45)
+	mat_sidewalk = _pbr("concrete_floor_02", Color("8d8d8d"), 0.4)
+	mat_road = _pbr("asphalt_02", Color("3b3b3b"), 0.3)
+	mat_marble = _pbr("marble_01", Color("e8e4dc"), 0.6, Color.WHITE, 0.2)
+	mat_paint = _mat(Color("f1ece2"))
+	var has_wood := mat_wood.albedo_texture != null
+	board_tint = Color(0.62, 0.58, 0.55) if has_wood else BOARD_COLOR
+	board_done_tint = Color(0.45, 0.95, 0.5) if has_wood else BOARD_DONE
 	glass_mat = StandardMaterial3D.new()
 	glass_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	glass_mat.albedo_color = Color(0.85, 0.95, 1.0, 0.1)
@@ -300,7 +356,7 @@ func _mat(c: Color) -> StandardMaterial3D:
 
 
 # ---------------- Dünya ----------------
-func _box(parent: Node, size: Vector3, pos: Vector3, col: Color, kind: String) -> StaticBody3D:
+func _box(parent: Node, size: Vector3, pos: Vector3, col: Color, kind: String, m: Material = null) -> StaticBody3D:
 	var body := StaticBody3D.new()
 	body.position = pos
 	body.set_meta("kind", kind)
@@ -308,7 +364,7 @@ func _box(parent: Node, size: Vector3, pos: Vector3, col: Color, kind: String) -
 	var bm := BoxMesh.new()
 	bm.size = size
 	mi.mesh = bm
-	mi.material_override = _mat(col)
+	mi.material_override = m if m != null else _mat(col)
 	body.add_child(mi)
 	var cs := CollisionShape3D.new()
 	var sh := BoxShape3D.new()
@@ -367,7 +423,15 @@ func _build_world() -> void:
 	env.background_color = Color("a9cfee")
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(1.0, 0.95, 0.88)
-	env.ambient_light_energy = 0.7
+	env.ambient_light_energy = 0.6
+	env.tonemap_mode = Environment.TONE_MAPPER_ACES
+	env.tonemap_exposure = 1.15
+	env.glow_enabled = true
+	env.glow_intensity = 0.5
+	env.glow_bloom = 0.05
+	env.adjustment_enabled = true
+	env.adjustment_saturation = 1.08
+	env.adjustment_contrast = 1.05
 	we.environment = env
 	add_child(we)
 	var sun := DirectionalLight3D.new()
@@ -385,26 +449,28 @@ func _build_world() -> void:
 		lamp.omni_range = ls[1]
 		lamp.light_energy = 1.3
 		lamp.light_color = Color(1, 0.93, 0.82)
+		lamp.light_energy = 1.6
 		add_child(lamp)
+		_pendant_lamp(lamp.position + Vector3(0, 0.35, 0))
 
 	# --- Zemin, dış kaldırım, tavan ---
 	var floor_col := Color("7a5a3c")
-	_box(self, Vector3(ROOM_W + 0.6, 0.2, ROOM_D + 0.6), Vector3(0, -0.1, 0), floor_col, "floor")
-	_box(self, Vector3(ROOM_W + 30, 0.2, 24), Vector3(0, -0.12, hd + 12.3), Color("8d8d8d"), "floor")
-	_box(self, Vector3(ROOM_W + 30, 0.2, 14), Vector3(0, -0.13, hd + 31), Color("3b3b3b"), "floor")
-	_box(self, Vector3(ROOM_W + 0.6, 0.3, ROOM_D + 0.6), Vector3(0, BUILD_H + 0.15, 0), Color("e9e1d3"), "wall")
+	_box(self, Vector3(ROOM_W + 0.6, 0.2, ROOM_D + 0.6), Vector3(0, -0.1, 0), floor_col, "floor", mat_floor)
+	_box(self, Vector3(ROOM_W + 30, 0.2, 24), Vector3(0, -0.12, hd + 12.3), Color("8d8d8d"), "floor", mat_sidewalk)
+	_box(self, Vector3(ROOM_W + 30, 0.2, 14), Vector3(0, -0.13, hd + 31), Color("3b3b3b"), "floor", mat_road)
+	_box(self, Vector3(ROOM_W + 0.6, 0.3, ROOM_D + 0.6), Vector3(0, BUILD_H + 0.15, 0), Color("e9e1d3"), "wall", mat_ceiling)
 
 	# --- Duvarlar (ön duvarda kapı boşluğu) ---
 	var wall := Color("d9c9ae")
-	_box(self, Vector3(ROOM_W + 0.6, BUILD_H, 0.3), Vector3(0, BUILD_H / 2, -hd - 0.15), wall, "wall")
-	_box(self, Vector3(0.3, BUILD_H, ROOM_D + 0.6), Vector3(-hw - 0.15, BUILD_H / 2, 0), wall, "wall")
-	_box(self, Vector3(0.3, BUILD_H, ROOM_D + 0.6), Vector3(hw + 0.15, BUILD_H / 2, 0), wall, "wall")
+	_box(self, Vector3(ROOM_W + 0.6, BUILD_H, 0.3), Vector3(0, BUILD_H / 2, -hd - 0.15), wall, "wall", mat_wall)
+	_box(self, Vector3(0.3, BUILD_H, ROOM_D + 0.6), Vector3(-hw - 0.15, BUILD_H / 2, 0), wall, "wall", mat_wall)
+	_box(self, Vector3(0.3, BUILD_H, ROOM_D + 0.6), Vector3(hw + 0.15, BUILD_H / 2, 0), wall, "wall", mat_wall)
 	var seg_w := hw - DOOR_W / 2.0
 	for sx in [-1.0, 1.0]:
-		_box(self, Vector3(seg_w, BUILD_H, 0.3), Vector3(sx * (DOOR_W / 2.0 + seg_w / 2.0), BUILD_H / 2, hd + 0.15), wall, "wall")
-	_box(self, Vector3(DOOR_W, BUILD_H - DOOR_H, 0.3), Vector3(0, DOOR_H + (BUILD_H - DOOR_H) / 2, hd + 0.15), wall, "wall")
+		_box(self, Vector3(seg_w, BUILD_H, 0.3), Vector3(sx * (DOOR_W / 2.0 + seg_w / 2.0), BUILD_H / 2, hd + 0.15), wall, "wall", mat_wall)
+	_box(self, Vector3(DOOR_W, BUILD_H - DOOR_H, 0.3), Vector3(0, DOOR_H + (BUILD_H - DOOR_H) / 2, hd + 0.15), wall, "wall", mat_wall)
 	# süpürgelik
-	var trim := _mat(Color("5a3d28"))
+	var trim: Material = mat_wood
 	_mesh_box(self, Vector3(ROOM_W, 0.15, 0.04), Vector3(0, 0.075, -hd + 0.02), trim)
 	_mesh_box(self, Vector3(0.04, 0.15, ROOM_D), Vector3(-hw + 0.02, 0.075, 0), trim)
 	_mesh_box(self, Vector3(0.04, 0.15, ROOM_D), Vector3(hw - 0.02, 0.075, 0), trim)
@@ -412,14 +478,14 @@ func _build_world() -> void:
 	# --- Kapı: çerçeve, açık cam kanatlar, tabela ---
 	var frame_col := Color("3b2a1d")
 	for sx in [-1.0, 1.0]:
-		_box(self, Vector3(0.2, DOOR_H, 0.45), Vector3(sx * (DOOR_W / 2.0 + 0.1), DOOR_H / 2, hd + 0.15), frame_col, "wall")
+		_box(self, Vector3(0.2, DOOR_H, 0.45), Vector3(sx * (DOOR_W / 2.0 + 0.1), DOOR_H / 2, hd + 0.15), frame_col, "wall", mat_wood)
 		var leaf := Node3D.new()
 		leaf.position = Vector3(sx * DOOR_W / 2.0, 0, hd + 0.2)
 		leaf.rotation.y = sx * 1.3
 		add_child(leaf)
 		_mesh_box(leaf, Vector3(DOOR_W / 2.0 - 0.1, DOOR_H - 0.15, 0.05), Vector3(-sx * (DOOR_W / 4.0), DOOR_H / 2, 0), glass_mat)
-		_mesh_box(leaf, Vector3(0.06, DOOR_H - 0.15, 0.07), Vector3(-sx * (DOOR_W / 2.0 - 0.1), DOOR_H / 2, 0), _mat(frame_col))
-	_mesh_box(self, Vector3(DOOR_W + 0.6, 0.2, 0.45), Vector3(0, DOOR_H + 0.1, hd + 0.15), _mat(frame_col))
+		_mesh_box(leaf, Vector3(0.06, DOOR_H - 0.15, 0.07), Vector3(-sx * (DOOR_W / 2.0 - 0.1), DOOR_H / 2, 0), mat_wood)
+	_mesh_box(self, Vector3(DOOR_W + 0.6, 0.2, 0.45), Vector3(0, DOOR_H + 0.1, hd + 0.15), mat_wood)
 	for side in [1.0, -1.0]:
 		var sign_z: float = hd + 0.15 + side * 0.25
 		var board := _mesh_box(self, Vector3(9.0, 1.4, 0.12), Vector3(0, DOOR_H + 1.3, sign_z), _mat(Color("8a1f2b")))
@@ -448,9 +514,9 @@ func _build_world() -> void:
 		_window(Vector3(x, 2.4, -hd + 0.03), Vector2(5.0, 2.6), 0.0)
 
 	# --- Kasa ---
-	var counter := _box(self, Vector3(3.2, 1.0, 1.0), Vector3(8.5, 0.5, hd - 5.5), Color("6b4a32"), "wall")
+	var counter := _box(self, Vector3(3.2, 1.0, 1.0), Vector3(8.5, 0.5, hd - 5.5), Color("6b4a32"), "wall", mat_wood)
 	counter.set_meta("kind", "wall")
-	_mesh_box(self, Vector3(3.3, 0.06, 1.1), Vector3(8.5, 1.03, hd - 5.5), _mat(Color("e8e0d0")))
+	_mesh_box(self, Vector3(3.3, 0.06, 1.1), Vector3(8.5, 1.03, hd - 5.5), mat_marble)
 	_mesh_box(self, Vector3(0.5, 0.3, 0.4), Vector3(8.0, 1.21, hd - 5.5), _mat(Color("2a2a2a")))
 	var kl := Label3D.new()
 	kl.text = "KASA"
@@ -463,22 +529,27 @@ func _build_world() -> void:
 
 	# --- Asma kat: döşeme, kolonlar, cam korkuluk, sahanlık ---
 	var mezz_d := MEZZ_EDGE_Z + hd
-	_box(self, Vector3(ROOM_W, 0.3, mezz_d), Vector3(0, MEZZ_Y - 0.15, (-hd + MEZZ_EDGE_Z) / 2.0), floor_col, "floor")
+	_box(self, Vector3(ROOM_W, 0.3, mezz_d), Vector3(0, MEZZ_Y - 0.15, (-hd + MEZZ_EDGE_Z) / 2.0), floor_col, "floor", mat_floor)
 	_mesh_box(self, Vector3(ROOM_W, 0.32, 0.06), Vector3(0, MEZZ_Y - 0.15, MEZZ_EDGE_Z + 0.03), trim)
 	for x in COLUMN_X:
-		_box(self, Vector3(0.45, MEZZ_Y - 0.3, 0.45), Vector3(x, (MEZZ_Y - 0.3) / 2.0, MEZZ_EDGE_Z - 0.3), Color("cbb89a"), "wall")
-	var rail_glass := glass_mat
-	for sx in [-1.0, 1.0]:
-		var seg_len := hw - 1.2
-		var cx: float = sx * (1.2 + seg_len / 2.0)
+		_box(self, Vector3(0.45, MEZZ_Y - 0.3, 0.45), Vector3(x, (MEZZ_Y - 0.3) / 2.0, MEZZ_EDGE_Z - 0.3), Color("cbb89a"), "wall", mat_marble)
+	# Cam korkuluk: iki merdivenin geldiği yerlerde boşluk var
+	var gap := STAIR_W / 2.0 + 0.05
+	var rail_spans := [
+		[-hw, -STAIR_X - gap], [-STAIR_X + gap, STAIR_X - gap], [STAIR_X + gap, hw],
+	]
+	for span in rail_spans:
+		var x0: float = span[0]
+		var x1: float = span[1]
+		var seg_len := x1 - x0
+		var cx := (x0 + x1) / 2.0
 		var rail := _box(self, Vector3(seg_len, 1.0, 0.05), Vector3(cx, MEZZ_Y + 0.5, MEZZ_EDGE_Z - 0.08), Color("cfe8f0"), "wall")
-		(rail.get_child(0) as MeshInstance3D).material_override = rail_glass
-		_mesh_box(self, Vector3(seg_len, 0.07, 0.1), Vector3(cx, MEZZ_Y + 1.03, MEZZ_EDGE_Z - 0.08), trim)
-	# Sahanlık: merdivenin bittiği yerden asma kat kenarına
-	var land_d := (SPIRAL_C.y - (SPIRAL_R - 0.8) + 0.4) - MEZZ_EDGE_Z
-	_box(self, Vector3(2.4, 0.3, land_d), Vector3(SPIRAL_C.x, MEZZ_Y - 0.15, MEZZ_EDGE_Z + land_d / 2.0), floor_col, "floor")
+		(rail.get_child(0) as MeshInstance3D).material_override = glass_mat
+		_mesh_box(self, Vector3(seg_len, 0.07, 0.1), Vector3(cx, MEZZ_Y + 1.03, MEZZ_EDGE_Z - 0.08), mat_wood_fine)
+		_mesh_box(self, Vector3(seg_len, 0.05, 0.08), Vector3(cx, MEZZ_Y + 0.03, MEZZ_EDGE_Z - 0.08), mat_wood_fine)
 
-	_build_spiral()
+	_build_stairs(-STAIR_X)
+	_build_stairs(STAIR_X)
 
 	# --- Ortak çoklu çizimler: yuva halkaları, raf çıtaları, vitrindeki tasolar ---
 	var total := set_count * NUMBERS_PER_SET
@@ -508,7 +579,7 @@ func _build_world() -> void:
 	lip_mm.instance_count = set_count * SLOT_ROWS
 	var lip_mmi := MultiMeshInstance3D.new()
 	lip_mmi.multimesh = lip_mm
-	lip_mmi.material_override = _mat(Color("8a6240"))
+	lip_mmi.material_override = mat_wood_fine
 	add_child(lip_mmi)
 
 	shelf_mm = _new_mm(total)
@@ -553,47 +624,113 @@ func _window(center: Vector3, size: Vector2, rot: float) -> void:
 	_mesh_box(node, Vector3(size.x, 0.05, 0.05), Vector3(0, 0, 0.02), fm)
 
 
-## Spiral merdiven: üstü basamaklı görünen, eğimli parçalardan oluşan helezon rampa
-func _build_spiral() -> void:
-	var c := Vector3(SPIRAL_C.x, 0, SPIRAL_C.y)
-	var turns := 1.5
-	var segs := 72
-	var sweep := TAU * turns
-	var end_ang := -PI / 2.0                     # en üstte kuzeye (asma kata) bakar
-	var start_ang := end_ang - sweep
-	var rise := MEZZ_Y / segs
-	var mid_r := SPIRAL_R - 0.8
-	var step_mat := _mat(Color("6b4a32"))
-	var edge_mat := _mat(Color("d8c9a8"))
-	for k in segs:
-		var a := start_ang + (k + 0.5) * sweep / segs
-		var radial := Vector3(cos(a), 0, sin(a))
-		var tangent := Vector3(-sin(a), 0, cos(a))
-		var arc := mid_r * sweep / segs
-		var zf := (tangent * arc + Vector3.UP * rise).normalized()
-		var yu := zf.cross(radial)
-		var b := Basis(radial, yu, zf)
-		var pos := c + radial * mid_r + Vector3.UP * ((k + 0.5) * rise - 0.06)
+## Bir merdiven kolu: verilen x'te, zemin kattan (z = STAIR_Z0) asma kat kenarına (z = MEZZ_EDGE_Z) çıkar.
+## İki kol (x = -8 ve +8) asma katın balkonuyla birlikte U şekli oluşturur.
+## Görünen basamakların altında, karakterin takılmadan yürüdüğü görünmez düz bir rampa var.
+func _build_stairs(x: float) -> void:
+	var run := STAIR_Z0 - MEZZ_EDGE_Z
+	var rise := MEZZ_Y / STAIR_STEPS
+	var tread := run / STAIR_STEPS
+	var w := STAIR_W
+	# basamaklar ve rıhtlar
+	for k in STAIR_STEPS:
+		var z_front := STAIR_Z0 - k * tread
+		var y_top := (k + 1) * rise
+		_mesh_box(self, Vector3(w, 0.045, tread + 0.035), Vector3(x, y_top - 0.0225, z_front - tread / 2.0 + 0.0175), mat_wood)
+		_mesh_box(self, Vector3(w - 0.02, rise, 0.02), Vector3(x, y_top - rise / 2.0, z_front - 0.01), mat_paint)
+	# basamakların altını kapatan eğimli gövde ve yan kirişler (görsel)
+	var p0 := Vector3(x, 0.0, STAIR_Z0)
+	var p1 := Vector3(x, MEZZ_Y, MEZZ_EDGE_Z)
+	_slope_box(self, Vector3(w, 0.25, 0.0), p0, p1, -0.2, mat_paint, false)
+	for sx in [-1.0, 1.0]:
+		var side := Vector3(sx * (w / 2.0 + 0.05), 0, 0)
+		_slope_box(self, Vector3(0.1, 0.45, 0.0), p0 + side, p1 + side, 0.05, mat_wood, false)
+	# görünmez yürüme rampası: basamak burunlarının biraz altından geçer
+	var ext := (p1 - p0).normalized()
+	_slope_box(self, Vector3(w, 0.1, 0.0), p0 + Vector3(0, rise * 0.5, 0) - ext * 0.6, p1 + Vector3(0, rise * 0.5, 0), -0.05, null, true)
+	# korkuluklar: görünmez duvar + babalar + küpeşte
+	for sx in [-1.0, 1.0]:
+		var side := Vector3(sx * (w / 2.0 + 0.04), 0, 0)
+		_slope_box(self, Vector3(0.06, 1.0, 0.0), p0 + side, p1 + side, 0.55, null, true)
+		_slope_box(self, Vector3(0.09, 0.07, 0.0), p0 + side + Vector3(0, 0.95, 0), p1 + side + Vector3(0, 0.95, 0), 0.0, mat_wood_fine, false)
+		for k in range(0, STAIR_STEPS, 2):
+			var z := STAIR_Z0 - (k + 0.5) * tread
+			var y := (k + 1) * rise
+			_cyl(self, 0.022, 0.92, Vector3(x + side.x, y + 0.46, z), Color("f1ece2"), false)
+		# başlangıç direği
+		_box(self, Vector3(0.16, 1.15, 0.16), Vector3(x + side.x, 0.575, STAIR_Z0 + 0.05), Color("5a3d28"), "wall", mat_wood)
+		_mesh_box(self, Vector3(0.22, 0.08, 0.22), Vector3(x + side.x, 1.19, STAIR_Z0 + 0.05), mat_wood_fine)
+	# merdiven önünde halı
+	_mesh_box(self, Vector3(w + 0.4, 0.015, 1.6), Vector3(x, 0.008, STAIR_Z0 + 1.0), _mat(Color("7a1f27")))
+
+
+## a'dan b'ye uzanan eğimli kutu. size.x = genişlik, size.y = kalınlık (uzunluk otomatik).
+## up_off: kutunun yüzeye dik yönde kaydırılması. m = null ise görünmez.
+func _slope_box(parent: Node, size: Vector3, a: Vector3, b: Vector3, up_off: float, m: Material, collide: bool) -> void:
+	var zf := (b - a).normalized()
+	var yu := (Vector3.UP - zf * Vector3.UP.dot(zf)).normalized()
+	var xr := yu.cross(zf)
+	var length := a.distance_to(b)
+	var sz := Vector3(size.x, size.y, length)
+	var xf := Transform3D(Basis(xr, yu, zf), (a + b) / 2.0 + yu * up_off)
+	if collide:
 		var body := StaticBody3D.new()
-		body.transform = Transform3D(b, pos)
+		body.transform = xf
 		body.set_meta("kind", "floor")
-		var size := Vector3(1.6, 0.12, arc * 1.9)
-		var mi := MeshInstance3D.new()
-		var bm := BoxMesh.new()
-		bm.size = size
-		mi.mesh = bm
-		mi.material_override = step_mat if k % 2 == 0 else edge_mat
-		body.add_child(mi)
 		var cs := CollisionShape3D.new()
 		var sh := BoxShape3D.new()
-		sh.size = size
+		sh.size = sz
 		cs.shape = sh
 		body.add_child(cs)
-		add_child(body)
-		if k % 3 == 0:
-			var post_pos := c + radial * (SPIRAL_R - 0.05) + Vector3.UP * ((k + 0.5) * rise + 0.5)
-			_cyl(self, 0.025, 1.0, post_pos, Color("3b2a1d"), false)
-	_cyl(self, 0.22, MEZZ_Y + 1.2, c + Vector3.UP * (MEZZ_Y + 1.2) / 2.0, Color("3b2a1d"), true)
+		if m != null:
+			var mi := MeshInstance3D.new()
+			var bm := BoxMesh.new()
+			bm.size = sz
+			mi.mesh = bm
+			mi.material_override = m
+			body.add_child(mi)
+		parent.add_child(body)
+	elif m != null:
+		var mi2 := MeshInstance3D.new()
+		var bm2 := BoxMesh.new()
+		bm2.size = sz
+		mi2.mesh = bm2
+		mi2.material_override = m
+		mi2.transform = xf
+		parent.add_child(mi2)
+
+
+## Tavandan sarkan sarkıt lamba (kablo, abajur, parlayan ampul)
+func _pendant_lamp(pos: Vector3) -> void:
+	var top := BUILD_H if pos.y > MEZZ_Y + 1.0 else MEZZ_Y - 0.3
+	var cord_len := maxf(top - pos.y, 0.1)
+	_cyl(self, 0.01, cord_len, pos + Vector3(0, cord_len / 2.0, 0), Color("202020"), false)
+	var shade := MeshInstance3D.new()
+	var cm := CylinderMesh.new()
+	cm.top_radius = 0.12
+	cm.bottom_radius = 0.42
+	cm.height = 0.35
+	cm.radial_segments = 24
+	shade.mesh = cm
+	var sm := StandardMaterial3D.new()
+	sm.albedo_color = Color("2f4f3f")
+	sm.metallic = 0.6
+	sm.roughness = 0.35
+	sm.cull_mode = BaseMaterial3D.CULL_DISABLED
+	shade.material_override = sm
+	shade.position = pos
+	add_child(shade)
+	var bulb := MeshInstance3D.new()
+	var sp := SphereMesh.new()
+	sp.radius = 0.09
+	sp.height = 0.18
+	bulb.mesh = sp
+	var bm := StandardMaterial3D.new()
+	bm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	bm.albedo_color = Color(1.0, 0.92, 0.75)
+	bulb.material_override = bm
+	bulb.position = pos + Vector3(0, -0.15, 0)
+	add_child(bulb)
 
 
 ## 34 vitrin: [konum, y-dönüşü]. Vitrin yerelde +z'ye bakar.
@@ -635,15 +772,17 @@ func _build_vitrine(g: int, pos: Vector3, rot: float) -> void:
 	var top_y := BOARD_Y + h / 2.0
 	var base_top := BOARD_Y - h / 2.0
 
-	var back := _box(shelf, Vector3(w, h, 0.1), Vector3(0, BOARD_Y, 0), BOARD_COLOR, "shelf")
+	var board_m: StandardMaterial3D = mat_wood.duplicate()
+	board_m.albedo_color = board_tint
+	var back := _box(shelf, Vector3(w, h, 0.1), Vector3(0, BOARD_Y, 0), BOARD_COLOR, "shelf", board_m)
 	back.set_meta("grp", g)
-	board_mats.append((back.get_child(0) as MeshInstance3D).material_override)
+	board_mats.append(board_m)
 	for sx in [-1.0, 1.0]:
-		var side := _box(shelf, Vector3(0.08, h + 0.12, depth), Vector3(sx * (w / 2.0 + 0.04), BOARD_Y, depth / 2.0 - 0.05), wood, "shelf")
+		var side := _box(shelf, Vector3(0.08, h + 0.12, depth), Vector3(sx * (w / 2.0 + 0.04), BOARD_Y, depth / 2.0 - 0.05), wood, "shelf", mat_wood)
 		side.set_meta("grp", g)
-	var cap := _box(shelf, Vector3(w + 0.16, 0.1, depth + 0.04), Vector3(0, top_y + 0.05, depth / 2.0 - 0.04), wood, "shelf")
+	var cap := _box(shelf, Vector3(w + 0.16, 0.1, depth + 0.04), Vector3(0, top_y + 0.05, depth / 2.0 - 0.04), wood, "shelf", mat_wood)
 	cap.set_meta("grp", g)
-	var base := _box(shelf, Vector3(w + 0.16, base_top, depth + 0.08), Vector3(0, base_top / 2.0, depth / 2.0 - 0.02), wood.darkened(0.25), "shelf")
+	var base := _box(shelf, Vector3(w + 0.16, base_top, depth + 0.08), Vector3(0, base_top / 2.0, depth / 2.0 - 0.02), wood.darkened(0.25), "shelf", mat_wood)
 	base.set_meta("grp", g)
 	var header := _box(shelf, Vector3(w + 0.16, 0.26, 0.12), Vector3(0, top_y + 0.23, 0.02), col, "shelf")
 	header.set_meta("grp", g)
@@ -771,7 +910,7 @@ func _random_floor_pos() -> Vector3:
 
 ## Zemin katta taso saçılmayacak yerler: merdiven, standlar, kolonlar, kapı önü, kasa
 func _floor_blocked(p: Vector3) -> bool:
-	if Vector2(p.x, p.z).distance_to(SPIRAL_C) < SPIRAL_R + 0.6:
+	if absf(absf(p.x) - STAIR_X) < STAIR_W / 2.0 + 0.6 and p.z > MEZZ_EDGE_Z - 0.5 and p.z < STAIR_Z0 + 2.0:
 		return true
 	for sx in STAND_X:
 		if absf(p.x - sx) < 2.2 and absf(p.z - STAND_Z) < 1.3:
@@ -1263,7 +1402,7 @@ func _check_shelf(g: int) -> void:
 	if done != shelf_done[g]:
 		shelf_done[g] = done
 		var bm: StandardMaterial3D = board_mats[g]
-		bm.albedo_color = BOARD_DONE if done else BOARD_COLOR
+		bm.albedo_color = board_done_tint if done else board_tint
 		var hm: StandardMaterial3D = header_mats[g]
 		hm.emission_enabled = done
 		for k in NUMBERS_PER_SET:

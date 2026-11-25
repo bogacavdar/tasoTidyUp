@@ -7,7 +7,7 @@ Godot ile yapılan bir "kaostan düzene" toplu dizme oyunu. Oyuncu birinci şah�
 - **Bina:** 70×50 m'lik bir taso dükkânı.
   - Ön duvarda açık cam kapı, "TASO DÜKKÂNI" tabelası, dışarıda kaldırım.
   - Vitrin camları ve pencereler, kapının yanında bir kasa.
-  - Spiral merdivenle çıkılan, cam korkuluklu bir asma kat.
+  - Sağda ve solda iki kollu (U şeklinde) malikane merdiveniyle çıkılan, cam korkuluklu bir asma kat.
 - **34 adet 3D vitrin:**
   - Sol ve sağ duvarlarda 6'şar, ortada 4 çift taraflı stand (8), ön duvarda 4, asma katta 10.
   - Her vitrinde yan panolar, üst kapak, alt dolap, her sırada raf çıtası, cam ön yüz, LED şerit ve set renginde başlık var.
@@ -46,6 +46,11 @@ Her `main` push'unda GitHub Actions web build alıp GitHub Pages'e yayınlar: ht
 - **Q:** seçili tasoyu bırak, **sağ tık:** elindekilerin hepsini bırak
 - **1-3:** yetenek satın al
 - **R:** yeniden başla, **Esc:** fareyi serbest bırak
+
+## Görseller
+
+- Zemin, duvar, tavan ve ahşap yüzeylerde [Poly Haven](https://polyhaven.com)'ın gerçek fotoğraf dokuları (CC0) kullanılıyor. Liste `assets/textures.txt` dosyasında. `Dokuları indir` iş akışı bunları `assets/tex/` klasörüne indirir.
+- Işık: ACES ton eşleme, hafif parlama (glow), sarkıt lambalar.
 
 ## Yol haritası
 

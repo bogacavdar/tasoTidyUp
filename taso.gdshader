@@ -81,10 +81,16 @@ float ell_d(vec2 p, vec2 c, vec2 r, float a) {
 }
 
 // Döndürülmüş, kenar çizgili elips
+// Döndürülmüş, kenar çizgili, hacimli gölgelendirilmiş elips (üst-sol ışık + parlama)
 vec3 blob(vec3 col, vec2 p, vec2 c, vec2 r, float a, vec3 fc, vec3 lc, float line) {
-	float d = ell_d(p, c, r, a);
+	vec2 q = rot(p - c, -a);
+	vec2 v = q / r;
+	float d = (length(v) - 1.0) * min(r.x, r.y);
 	col = mix(col, lc, aa(d - line));
-	return mix(col, fc, aa(d));
+	float shade = 1.0 + 0.16 * (-v.x * 0.6 - v.y * 0.8) - 0.12 * dot(v, v);
+	float spec = smoothstep(0.34, 0.0, length(v - vec2(-0.38, -0.45))) * 0.3;
+	vec3 f = fc * shade + vec3(spec);
+	return mix(col, f, aa(d));
 }
 
 // Kenar çizgili şekil: verilen mesafe değeriyle
@@ -583,7 +589,21 @@ void fragment() {
 		else if (motif < 6.5) { art = m_bird(p, seed, hue, mode, art); }
 		else if (motif < 7.5) { art = m_landscape(p, seed, hue, mode, art); }
 		else { art = m_bug(p, seed, hue, mode, art); }
+		// zemin gölgesi (ayakta duran motiflerde)
+		if (motif < 0.5 || (motif > 4.5 && motif < 6.5) || motif > 7.5) {
+			float sh = smoothstep(1.0, 0.0, length((p - vec2(0.0, 0.47)) / vec2(0.42, 0.07)));
+			art = mix(art, art * 0.68, sh * 0.55);
+		}
+		// baskı dokusu ve kenar kararması
+		float grain = hsh(floor(uv.x * 380.0) + floor(uv.y * 380.0) * 397.0, 5.0);
+		art *= 0.965 + 0.07 * grain;
+		art *= mix(1.0, 0.82, smoothstep(0.22, 0.37, d));
 		base = mix(base, art, disc);
+		// taso kenarı: hafif kabartma halkası ve dışa doğru koyulaşma
+		float rim = 1.0 - disc;
+		base *= mix(1.0, 0.86 + 0.18 * (1.0 - smoothstep(0.375, 0.5, d)), rim);
+		base = mix(base, min(base * 1.35 + 0.05, vec3(1.0)), smoothstep(0.012, 0.0, abs(d - 0.388)) * 0.7);
+		base = mix(base, base * 0.6, smoothstep(0.01, 0.0, abs(d - 0.373)) * 0.8);
 
 		// altta küçük numara, okunur olsun diye yarı saydam etiket üstünde
 		float pill = max(abs(uv.x - 0.5) - 0.075, abs(uv.y - 0.815) - 0.045);
@@ -598,6 +618,7 @@ void fragment() {
 		EMISSION = rainbow * 0.3;
 	}
 	ALBEDO = base;
-	ROUGHNESS = holo > 0.5 ? 0.25 : 0.65;
-	METALLIC = holo > 0.5 ? 0.4 : 0.0;
+	ROUGHNESS = holo > 0.5 ? 0.22 : 0.42;
+	METALLIC = holo > 0.5 ? 0.45 : 0.0;
+	SPECULAR = 0.6;
 }

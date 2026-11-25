@@ -1,0 +1,26 @@
+name: Dokuları indir (Poly Haven, CC0)
+
+on:
+  push:
+    branches: [main]
+    paths: ["assets/textures.txt", "tools/fetch_textures.py"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dokuları indir
+        run: python3 tools/fetch_textures.py
+      - name: Depoya ekle
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/tex
+          if git diff --cached --quiet; then echo "Değişiklik yok"; exit 0; fi
+          git commit -m "Poly Haven dokuları (CC0) güncellendi"
+          git push
