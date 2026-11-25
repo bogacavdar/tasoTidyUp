@@ -25,7 +25,7 @@ Godot ile yapılan bir "kaostan düzene" toplu dizme oyunu. Oyuncu birinci şah�
 
 ### İndir
 
-- **Windows ve Android:** [Releases → Son sürüm](https://github.com/bogacavdar/tasoTidyUp/releases/tag/son-surum). Her `main` push'unda otomatik güncellenir. Windows için zip'i aç ve `TasoDukkani.exe`'yi çalıştır. Android için `.apk`'yı kur.
+- **Windows ve Android:** [Releases → Son sürüm](https://github.com/bogacavdar/tasoTidyUp/releases/tag/son-surum). Her `main` push'unda otomatik güncellenir. Windows için zip'i aç ve `TasoDukkani.exe`'yi çalıştır. Android için `.apk`'yı kur. APK'lar depodaki sabit test anahtarıyla (`android/test.keystore`) imzalanır, böylece güncellemeler eskisinin üstüne kurulur. Bu anahtar yalnızca test dağıtımı içindir; Google Play'e çıkarken gizli tutulan ayrı bir yükleme anahtarı kullanılmalı.
 - **Telefonda kontroller:** Sol taraf sanal joystick. Sağ tarafı sürükleyince bakış döner, kısa dokununca taso alınır veya yerleştirilir. Zıpla, Koş, Bırak, < > ve 1-3 butonları da var.
 
 ### Tarayıcıda oyna

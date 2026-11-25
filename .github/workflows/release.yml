@@ -40,9 +40,8 @@ jobs:
 
       - name: Android imzalama anahtarı ve editör ayarları
         run: |
-          keytool -genkeypair -v -keystore $HOME/taso.keystore -storepass tasodukkani -alias taso \
-            -keypass tasodukkani -keyalg RSA -keysize 2048 -validity 10000 \
-            -dname "CN=Taso Dukkani,O=Taso,C=TR"
+          # Sabit test anahtarı: her sürüm aynı imzayla çıkar, telefonda güncelleme eskisinin üstüne kurulur.
+          cp android/test.keystore $HOME/taso.keystore
           SDK=${ANDROID_SDK_ROOT:-$ANDROID_HOME}
           mkdir -p ~/.config/godot
           for f in editor_settings-4.tres editor_settings-4.3.tres; do
@@ -93,6 +92,6 @@ jobs:
             --notes "main dalındaki son değişikliklerden otomatik oluşturuldu ($SHORT).
 
           - **Windows:** TasoDukkani-Windows.zip dosyasını indir, klasöre çıkar, TasoDukkani.exe'yi çalıştır. İmzasız olduğu için SmartScreen uyarı verirse 'Ek bilgi' > 'Yine de çalıştır'.
-          - **Android:** TasoDukkani-Android.apk dosyasını telefona indir ve kur (bilinmeyen kaynaklara izin vermen gerekebilir). Yeni sürüm kurmadan önce eskisini kaldır.
+          - **Android:** TasoDukkani-Android.apk dosyasını telefona indir ve kur (bilinmeyen kaynaklara izin vermen gerekebilir). Bu sürümden itibaren güncellemeler eskisinin üstüne kurulur (bir kereliğine, f85ec9b ve öncesi bir sürüm yüklüyse önce onu kaldır).
           - **Tarayıcı:** https://bogacavdar.github.io/tasoTidyUp/" \
             --prerelease --target "$GITHUB_SHA"
