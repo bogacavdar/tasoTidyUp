@@ -1,6 +1,6 @@
 # Taso Kaosu (çalışma adı)
 
-Godot ile yapılan bir "kaostan düzene" toplu dizme oyunu. Oyuncu birinci şahıs bakışla, yere yığılmış binlerce tasoyu setlerine ve numaralarına göre vitrinlere diziyor, kazandığı jetonlarla yetenek açıyor ve hızlanıyor.
+Godot ile yapılan bir "kaostan düzene" toplu dizme oyunu. Oyuncu birinci şahıs bakışla, yere yığılmış binlerce tasoyu setlerine ve numaralarına göre vitrinlere diziyor, kazandığı puanlarla gelişim ağacında yetenek açıyor ve hızlanıyor.
 
 ## Şu anki durum: Taso dükkânı
 
@@ -21,12 +21,16 @@ Godot ile yapılan bir "kaostan düzene" toplu dizme oyunu. Oyuncu birinci şah�
   - Doğru yere oturan taso çan sesi çıkarır.
 - **Puan:** Doğru yere ilk kez oturan taso +1, bir türün 3 evrimi doğru yerde +2, tamamlanan vitrin +25. Puanlar gelişim ağacında harcanır.
 - **Taşıma:** Elde birden fazla taso tutulabilir, fare tekerleğiyle seçilir. Zıplama ve Shift ile koşu var.
+- **Dükkânın dönüşümü:** Oyun loş, soluk renkli ve tozlu bir dükkânda başlar; yerde kir lekeleri, havada toz zerreleri vardır. Doğru dizilen taso arttıkça lambalar parlar, renkler canlanır, toz ve lekeler kaybolur. Her vitrinin LED şeridi o vitrin doldukça yanar ve camındaki toz silinir. Biten vitrinden konfeti fışkırır; %2, %10, %25, %50, %75 ve %90 düzende dükkân aydınlanıyor mesajı çıkar.
+- **Albüm (B ya da menü):** 34 setin her biri için 150 canlılık bir sayfa. Doğru yerine koyduğun canlılar renkli açılır, diğerleri karanlık siluet olarak durur. Alttaki set sekmeleri ve oklarla gezilir.
+- **Ses ve müzik:** Kodla sentezlenmiş sakin bir lo-fi dükkân müziği (`tools/gen_music.py` → `assets/audio/muzik.ogg`), ayak sesleri, taso alma, bırakma, yanlış yerleştirme, satın alma ve büyü sesleri. Ayarlarda genel ses, müzik ve efekt ayrı ayrı.
+- **İlk açılış rehberi:** Yeni oyunda 7 adımlık kısa bir rehber: taso alma, seçme, vitrini bulma, numara sırası, kırmızı halka ve puanlar, gelişim ağacı. H ile ya da telefonda "Rehberi geç" ile atlanır; Ayarlar'dan baştan gösterilir.
 - **Gelişim ağacı (Tab):** Taşıma ve hareket (El Kapasitesi, Avuç, Hız), Görüş (Sezgi, Vitrin Pusulası), Büyüler (Toplama, Otomatik Dizme, Ayıklama). Büyüler bekleme sürelidir: Z Sezgi, F Toplama, G Ayıklama.
 
 ### İndir
 
-- **Windows ve Android:** [Releases → Son sürüm](https://github.com/bogacavdar/tasoTidyUp/releases/tag/son-surum). Her `main` push'unda otomatik güncellenir. Windows için zip'i aç ve `TasoDukkani.exe`'yi çalıştır. Android için `.apk`'yı kur. APK'lar depodaki sabit test anahtarıyla (`android/test.keystore`) imzalanır, böylece güncellemeler eskisinin üstüne kurulur. Bu anahtar yalnızca test dağıtımı içindir; Google Play'e çıkarken gizli tutulan ayrı bir yükleme anahtarı kullanılmalı.
-- **Telefonda kontroller:** Sol taraf sanal joystick. Sağ tarafı sürükleyince bakış döner, kısa dokununca taso alınır veya yerleştirilir. Zıpla, Koş, Bırak, < > ve 1-3 butonları da var.
+- **Windows ve Android:** [Releases → Son sürüm](https://github.com/bogacavdar/tasoTidyUp/releases/tag/son-surum). Her `main` push'unda otomatik güncellenir. Windows için zip'i aç ve `TasoDukkani.exe`'yi çalıştır. Android için `.apk`'yı kur (64 bit ve 32 bit ARM telefonlarda çalışır). APK'lar depodaki sabit test anahtarıyla (`android/test.keystore`) imzalanır, böylece güncellemeler eskisinin üstüne kurulur. Bu anahtar yalnızca test dağıtımı içindir; Google Play'e çıkarken gizli tutulan ayrı bir yükleme anahtarı kullanılmalı.
+- **Telefonda kontroller:** Sol taraf sanal joystick. Sağ tarafı sürükleyince bakış döner, kısa dokununca taso alınır veya yerleştirilir. Zıpla, Koş, Bırak, < >, Ağaç ve açılan büyüler için butonlar da var. Telefonda görüntü çözünürlüğü varsayılan olarak %80'dir, parlama efekti kapalıdır; Ayarlar'dan değiştirilebilir.
 
 ### Tarayıcıda oyna
 
@@ -44,13 +48,13 @@ Her `main` push'unda GitHub Actions web build alıp GitHub Pages'e yayınlar: ht
 - **Sol tık:** yerden taso al / seçili tasoyu boş yuvaya koy / dolu yuvadaki tasoyu eline al (bir yuvada tek taso olur)
 - **Fare tekerleği:** eldeki tasolar arasında seçim yap
 - **Q:** seçili tasoyu bırak, **sağ tık:** elindekilerin hepsini bırak
-- **Tab:** gelişim ağacı, **Z / F / G:** büyüler
+- **Tab:** gelişim ağacı, **B:** albüm, **Z / F / G:** büyüler, **H:** rehberi geç
 - **Esc:** menü (telefonda sağ üstteki Menü butonu)
 
 ## Kayıt ve menü
 
 - İlerleme otomatik kaydedilir: değişiklik varsa 20 saniyede bir, menü açılınca, pencere arka plana geçince ve çıkarken. Tarayıcıda, Windows'ta ve Android'de ayrı ayrı çalışır (`user://kayit.json`).
-- Açılışta ve Esc ile menü: Devam Et, Kaydet, Yeni Oyun (iki kez onaylı), Ayarlar (fare/dokunmatik hassasiyeti, ses), Çıkış (tarayıcıda yok).
+- Açılışta ve Esc ile menü: Devam Et, Kaydet, Yeni Oyun (iki kez onaylı), Gelişim Ağacı, Albüm, Ayarlar (fare/dokunmatik hassasiyeti, genel ses, müzik, efektler, görüntü çözünürlüğü, rehberi baştan göster), Çıkış (tarayıcıda yok).
 
 ## Görseller
 
@@ -61,11 +65,11 @@ Her `main` push'unda GitHub Actions web build alıp GitHub Pages'e yayınlar: ht
 
 0. Konsept: 3D birinci şahıs, tasolar raflara ve vitrinlere dizilir
 1. Çirkin prototip ✓
-2. **5000 taso, büyük depo, taso yüzleri ← buradayız** (sırada: veri şeması)
-3. Yetenek ağacı ve ekonomi (15-20 yetenek)
+2. 5000 taso, büyük dükkân, taso yüzleri ✓
+3. Puan ve gelişim ağacı ✓ (dengeleme sürüyor)
 4. Modüler yaratık sistemi ve görsel stil (gövde aileleri, parçalar, elementler, evrim)
 5. İçerik: 34 set, 5100 benzersiz taso için özgün yaratıklar
-6. His ve cila: sesler, paket açma
+6. His ve cila: dükkân dönüşümü, albüm, müzik ve sesler, rehber ✓
 7. Steam sayfası, devlog, demo, çıkış
 
 Sonra: aynı motorla kartlı versiyon.

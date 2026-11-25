@@ -210,6 +210,48 @@ var menu_settings: Control
 var menu_tree: Control
 var tree_points: Label
 var tree_buttons := {}
+# Dükkân dönüşümü: düzen arttıkça ışık, renk, toz
+var env: Environment
+var sun: DirectionalLight3D
+var lamps: Array = []
+var order_vis := -1.0
+var milestone := 0
+var dust_mat: StandardMaterial3D
+var dirt_mat: StandardMaterial3D
+var dust_tex: NoiseTexture2D
+var shelf_led_mats: Array = []
+var shelf_dust_mats: Array = []
+var confetti_mesh: QuadMesh
+# Albüm
+var menu_album: Control
+var album_set := 0
+var album_cells: Array = []
+var album_title: Label
+var album_count: Label
+var album_tabs: Array = []
+var idx_of_uid := PackedInt32Array()
+# Ses
+var music: AudioStreamPlayer
+var foot: AudioStreamPlayer
+var music_vol := 0.55
+var sfx_vol := 1.0
+var render_scale := 1.0
+var snd_steps: Array = []
+var snd_pick: AudioStreamWAV
+var snd_drop: AudioStreamWAV
+var snd_wrong: AudioStreamWAV
+var snd_buy: AudioStreamWAV
+var snd_magic: AudioStreamWAV
+var step_accum := 1.2
+var was_on_floor := true
+# İlk açılış rehberi
+var tut_step := -1
+var tut_time := 0.0
+var tut_flag := false
+var tut_mark := 0
+var tut_panel: PanelContainer
+var tut_label: Label
+var tut_skip_btn: Button
 var menu_stats: Label
 var btn_continue: Button
 var btn_new: Button
@@ -240,15 +282,21 @@ func _ready() -> void:
 	for k in set_count * (NUMBERS_PER_SET / 3):
 		species_paid.append(false)
 	_spawn_tasos(data)
+	idx_of_uid.resize(tasos.size())
+	for i in tasos.size():
+		idx_of_uid[_uid(tasos[i])] = i
 	_build_pile()
 	_build_hud()
 	_build_sounds()
 	_build_ability_visuals()
+	_build_atmosphere()
 	if not data.is_empty():
 		_apply_save(data)
 		_say("Kaldığın yerden devam ediyorsun")
 	else:
-		_say("Bir tasoya bak ve sol tıkla!")
+		tut_step = 0
+	_tut_show()
+	milestone = _milestone_for(float(correct) / (set_count * NUMBERS_PER_SET))
 	_build_menu(not data.is_empty())
 	if skip_menu:
 		skip_menu = false
@@ -515,7 +563,7 @@ func _build_world() -> void:
 	var hd := ROOM_D / 2.0
 
 	var we := WorldEnvironment.new()
-	var env := Environment.new()
+	env = Environment.new()
 	env.background_mode = Environment.BG_COLOR
 	env.background_color = Color("a9cfee")
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
@@ -523,7 +571,7 @@ func _build_world() -> void:
 	env.ambient_light_energy = 0.6
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES
 	env.tonemap_exposure = 1.05
-	env.glow_enabled = true
+	env.glow_enabled = not touch_mode
 	env.glow_intensity = 0.3
 	env.glow_bloom = 0.05
 	env.adjustment_enabled = true
@@ -531,7 +579,7 @@ func _build_world() -> void:
 	env.adjustment_contrast = 1.05
 	we.environment = env
 	add_child(we)
-	var sun := DirectionalLight3D.new()
+	sun = DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-55, 25, 0)
 	sun.light_energy = 0.55
 	add_child(sun)
@@ -548,6 +596,7 @@ func _build_world() -> void:
 		lamp.light_color = Color(1, 0.93, 0.82)
 		lamp.light_energy = 1.6
 		add_child(lamp)
+		lamps.append(lamp)
 		_pendant_lamp(lamp.position + Vector3(0, 0.35, 0))
 
 	# --- Zemin, dış kaldırım, tavan ---
@@ -882,8 +931,20 @@ func _build_vitrine(g: int, pos: Vector3, rot: float) -> void:
 	var hm: StandardMaterial3D = (header.get_child(0) as MeshInstance3D).material_override
 	hm.emission = Color("3fae5a")
 	header_mats.append(hm)
-	_mesh_box(shelf, Vector3(w, 0.025, 0.03), Vector3(0, top_y - 0.03, depth - 0.12), led_mat)
+	var lm: StandardMaterial3D = led_mat.duplicate()
+	shelf_led_mats.append(lm)
+	_mesh_box(shelf, Vector3(w, 0.025, 0.03), Vector3(0, top_y - 0.03, depth - 0.12), lm)
 	_mesh_box(shelf, Vector3(w, h, 0.012), Vector3(0, BOARD_Y, depth - 0.06), glass_mat)
+	# camın üstündeki toz: vitrin doğru doldukça silinir
+	var dm := StandardMaterial3D.new()
+	dm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	dm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	dm.albedo_texture = _dust_texture()
+	dm.albedo_color = Color(0.78, 0.72, 0.62, 0.3)
+	dm.uv1_offset = Vector3(randf(), randf(), 0)
+	dm.uv1_scale = Vector3(1.2, 1.6, 1)
+	shelf_dust_mats.append(dm)
+	_mesh_box(shelf, Vector3(w, h, 0.004), Vector3(0, BOARD_Y, depth - 0.045), dm)
 
 	var title := Label3D.new()
 	title.font_size = 64
@@ -1130,6 +1191,7 @@ func _physics_process(delta: float) -> void:
 	else:
 		player.velocity.y -= GRAVITY * delta
 	player.move_and_slide()
+	_footsteps(delta)
 	if player.global_position.y < -5.0:
 		player.global_position = Vector3(0, 1.0, ROOM_D / 2.0 - 3.0)
 	cam.fov = lerpf(cam.fov, 82.0 if (sprint and mv != Vector2.ZERO) else 75.0, 8.0 * delta)
@@ -1173,6 +1235,8 @@ func _process(delta: float) -> void:
 		if sezgi_time <= 0.0 or fmod(anim, 0.5) < delta:
 			_refresh_glow()
 	_update_compass()
+	_update_order(delta)
+	_tut_update(delta)
 	_update_hud()
 
 
@@ -1212,6 +1276,11 @@ func _unhandled_input(event: InputEvent) -> void:
 				_use_ability("toplama")
 			KEY_G:
 				_use_ability("ayiklama")
+			KEY_B:
+				_open_album()
+			KEY_H:
+				if tut_step >= 0:
+					_tut_skip()
 
 
 ## Sol yarı: sanal joystick. Sağ yarı: sürükleyerek bak, kısa dokunuşla kullan.
@@ -1320,6 +1389,8 @@ func _cycle(dir: int) -> void:
 	if hand.is_empty():
 		return
 	sel = posmod(sel + dir, hand.size())
+	if tut_step == 1:
+		tut_flag = true
 	_rebuild_hand()
 
 
@@ -1393,6 +1464,7 @@ func _grab(first: int) -> void:
 				break
 			_take(i)
 	sel = hand.size() - 1
+	_play(snd_pick)
 	_rebuild_hand()
 
 
@@ -1443,6 +1515,7 @@ func _use_shelf(body: Node, hp: Vector3) -> void:
 		var old := _unplace(g, slot)
 		hand.append(old)
 		sel = hand.size() - 1
+		_play(snd_pick)
 	sel = clampi(sel, 0, maxi(hand.size() - 1, 0))
 	_rebuild_hand()
 
@@ -1474,6 +1547,8 @@ func _place(i: int, g: int, n: int) -> void:
 				species_paid[sk_i] = true
 				coins += COIN_SPECIES
 				_say("Tür tamam: 3 evrim yan yana! +%d puan" % COIN_SPECIES)
+	elif not loading:
+		_play(snd_wrong)
 	_check_shelf(g)
 	_refresh_ring(g, n)
 
@@ -1504,11 +1579,12 @@ func _refresh_ring(g: int, n: int) -> void:
 
 ## Vitrin tamamen doğru mu? Değiştiyse rengini ve halkalarını güncelle.
 func _check_shelf(g: int) -> void:
-	var done := true
+	var good := 0
 	for n in NUMBERS_PER_SET:
-		if not _is_correct(g, n):
-			done = false
-			break
+		if _is_correct(g, n):
+			good += 1
+	var done := good == NUMBERS_PER_SET
+	_shelf_look(g, good, done)
 	if done != shelf_done[g]:
 		shelf_done[g] = done
 		var bm: StandardMaterial3D = board_mats[g]
@@ -1519,6 +1595,7 @@ func _check_shelf(g: int) -> void:
 			_refresh_ring(g, k)
 		if done and not loading:
 			_play(snd_set, true)
+			_celebrate(g)
 			if not set_bonus_paid[g]:
 				set_bonus_paid[g] = true
 				coins += COIN_SET
@@ -1548,6 +1625,7 @@ func _drop(only_selected: bool) -> void:
 		var b := Basis(Vector3.UP, randf() * TAU) * Basis(Vector3.RIGHT, randf_range(-0.25, 0.25))
 		_put_in_pile(i, Transform3D(b, pos))
 		hand.erase(i)
+	_play(snd_drop)
 	sel = clampi(sel, 0, maxi(hand.size() - 1, 0))
 	_rebuild_hand()
 
@@ -1599,6 +1677,7 @@ func _try_buy(key: String) -> bool:
 	coins -= c
 	sk["level"] = lvl + 1
 	save_dirty = true
+	_play(snd_buy, true)
 	_say("%s açıldı!" % sk["name"])
 	return true
 
@@ -1629,6 +1708,7 @@ func _use_ability(key: String) -> void:
 			sezgi_time = SEZGI_SURE[_lvl("sezgi")]
 			_refresh_glow()
 			cooldowns["sezgi"] = CD_SEZGI
+			_play(snd_magic, true)
 			_say("Sezgi: %s tasoları parlıyor" % SETS[g]["name"])
 		"toplama":
 			var g := _selected_grp()
@@ -1637,10 +1717,12 @@ func _use_ability(key: String) -> void:
 				return
 			var n := _gather(g, TOPLAMA_R[_lvl("toplama")])
 			cooldowns["toplama"] = CD_TOPLAMA
+			_play(snd_magic, true)
 			_say("Toplama: %d %s tasosu önüne geldi" % [n, SETS[g]["name"]])
 		"ayiklama":
 			var n := _sort_around(AYIKLAMA_R[_lvl("ayiklama")])
 			cooldowns["ayiklama"] = CD_AYIKLAMA
+			_play(snd_magic, true)
 			_say("Ayıklama: %d taso setlerine göre yığıldı" % n)
 
 
@@ -1795,10 +1877,115 @@ func _say(s: String) -> void:
 func _build_sounds() -> void:
 	snd_correct = _make_chime([[1046.5, 0.0], [1568.0, 0.05]], 0.5)
 	snd_set = _make_chime([[523.3, 0.0], [659.3, 0.13], [784.0, 0.26], [1046.5, 0.39], [1318.5, 0.39], [1568.0, 0.39]], 1.6)
+	for k in 3:
+		snd_steps.append(_make_noise(0.13, 30.0, 0.12 + k * 0.03, 0.9, 85.0 + k * 18.0, 0.55))
+	snd_pick = _make_noise(0.09, 42.0, 0.75, 0.45, 1900.0, 0.18)
+	snd_drop = _make_clatter()
+	snd_wrong = _make_noise(0.16, 22.0, 0.08, 0.5, 196.0, 0.7)
+	snd_buy = _make_chime([[784.0, 0.0], [1046.5, 0.07], [1318.5, 0.14], [1568.0, 0.21]], 1.0)
+	snd_magic = _make_noise(0.7, 4.5, 0.02, 0.6, 600.0, 0.25, 0.9)
 	sfx = AudioStreamPlayer.new()
 	sfx.max_polyphony = 8
-	sfx.volume_db = -6.0
 	add_child(sfx)
+	foot = AudioStreamPlayer.new()
+	foot.max_polyphony = 2
+	add_child(foot)
+	music = AudioStreamPlayer.new()
+	music.process_mode = Node.PROCESS_MODE_ALWAYS
+	var path := "res://assets/audio/muzik.ogg"
+	if ResourceLoader.exists(path):
+		var ms: AudioStream = load(path)
+		if ms is AudioStreamOggVorbis:
+			(ms as AudioStreamOggVorbis).loop = true
+		music.stream = ms
+	add_child(music)
+	_apply_volumes()
+	if music.stream != null:
+		music.play()
+
+
+func _apply_volumes() -> void:
+	AudioServer.set_bus_volume_db(0, linear_to_db(maxf(volume, 0.001)))
+	if sfx != null:
+		sfx.volume_db = -6.0 + linear_to_db(maxf(sfx_vol, 0.001))
+		foot.volume_db = -15.0 + linear_to_db(maxf(sfx_vol, 0.001))
+		music.volume_db = -9.0 + linear_to_db(maxf(music_vol, 0.001))
+
+
+## Filtrelenmiş gürültü + isteğe bağlı ton. lp: alçak geçiren katsayısı (0-1),
+## sweep > 0: filtre zamanla açılıp kapanır ve ton yükselir (büyü "vuuş" sesi).
+func _make_noise(dur: float, decay: float, lp: float, vel: float, tone_f: float = 0.0, tone_amt: float = 0.0, sweep: float = 0.0) -> AudioStreamWAV:
+	var rate := 22050
+	var count := int(rate * dur)
+	var data := PackedByteArray()
+	data.resize(count * 2)
+	var y := 0.0
+	var ph := 0.0
+	for i in count:
+		var t := float(i) / rate
+		var a := clampf(lp + sweep * 0.4 * sin(PI * t / dur), 0.005, 1.0)
+		y += a * (randf_range(-1.0, 1.0) - y)
+		var env := exp(-t * decay) * minf(1.0, t * 600.0)
+		if sweep > 0.0:
+			env = sin(PI * t / dur) * exp(-t * decay * 0.3)
+		var f := tone_f * (1.0 + sweep * t / dur)
+		ph += TAU * f / rate
+		var v := (y * (1.0 - tone_amt) * 2.2 + sin(ph) * tone_amt) * env * vel
+		data.encode_s16(i * 2, int(clampf(v, -1.0, 1.0) * 30000.0))
+	var w := AudioStreamWAV.new()
+	w.format = AudioStreamWAV.FORMAT_16_BITS
+	w.mix_rate = rate
+	w.data = data
+	return w
+
+
+## Yere bırakılan tasolar: birkaç küçük karton tıkırtısı
+func _make_clatter() -> AudioStreamWAV:
+	var rate := 22050
+	var count := int(rate * 0.3)
+	var data := PackedByteArray()
+	data.resize(count * 2)
+	var hits := [0.0, 0.05, 0.09, 0.16, 0.21]
+	var y := 0.0
+	for i in count:
+		var t := float(i) / rate
+		var v := 0.0
+		y += 0.5 * (randf_range(-1.0, 1.0) - y)
+		for h in hits:
+			var lt: float = t - float(h)
+			if lt >= 0.0:
+				v += y * exp(-lt * 90.0) * (1.0 - float(h) * 2.5)
+		v += sin(TAU * 140.0 * t) * exp(-t * 30.0) * 0.25
+		data.encode_s16(i * 2, int(clampf(v * 0.55, -1.0, 1.0) * 30000.0))
+	var w := AudioStreamWAV.new()
+	w.format = AudioStreamWAV.FORMAT_16_BITS
+	w.mix_rate = rate
+	w.data = data
+	return w
+
+
+func _footsteps(delta: float) -> void:
+	var on_floor := player.is_on_floor()
+	var hv := Vector2(player.velocity.x, player.velocity.z).length()
+	if on_floor and not was_on_floor:
+		_step_sound(1.1)
+		step_accum = 0.0
+	elif on_floor and hv > 0.5:
+		step_accum += hv * delta
+		if step_accum > 1.75:
+			step_accum = 0.0
+			_step_sound(1.0)
+	elif on_floor:
+		step_accum = 1.2
+	was_on_floor = on_floor
+
+
+func _step_sound(gain: float) -> void:
+	if snd_steps.is_empty():
+		return
+	foot.stream = snd_steps[randi() % snd_steps.size()]
+	foot.pitch_scale = randf_range(0.88, 1.12) / gain
+	foot.play()
 
 
 ## notes: [[frekans, başlangıç sn], ...]; her nota hafif harmonikli, üstel sönümlü sinüs
@@ -1884,7 +2071,7 @@ func _write_save() -> void:
 	var data := {
 		"v": 1, "sets": set_count, "per_set": NUMBERS_PER_SET,
 		"coins": coins, "elapsed": snappedf(elapsed, 0.1), "skills": sk_levels,
-		"bonus": set_bonus_paid, "species": species_paid, "hand": hand, "sel": sel,
+		"bonus": set_bonus_paid, "species": species_paid, "tut": tut_step, "hand": hand, "sel": sel,
 		"player": [snappedf(pp.x, 0.01), snappedf(pp.y, 0.01), snappedf(pp.z, 0.01), snappedf(player.rotation.y, 0.001), snappedf(cam.rotation.x, 0.001)],
 		"tasos": list, "slots": slot_list,
 	}
@@ -1917,6 +2104,7 @@ func _apply_save(d: Dictionary) -> void:
 	for key in refund:
 		for k in mini(int(sk_levels.get(key, 0)), refund[key].size()):
 			coins += int(refund[key][k])
+	tut_step = int(d.get("tut", -1))
 	var bonus: Array = d.get("bonus", [])
 	for g in mini(bonus.size(), set_count):
 		set_bonus_paid[g] = bool(bonus[g])
@@ -1940,6 +2128,7 @@ func _notification(what: int) -> void:
 
 
 func _load_settings() -> void:
+	render_scale = 0.8 if touch_mode else 1.0
 	if FileAccess.file_exists(SETTINGS_PATH):
 		var f := FileAccess.open(SETTINGS_PATH, FileAccess.READ)
 		var parsed: Variant = JSON.parse_string(f.get_as_text())
@@ -1949,13 +2138,17 @@ func _load_settings() -> void:
 			mouse_sens = float(d.get("mouse", mouse_sens))
 			touch_sens = float(d.get("touch", touch_sens))
 			volume = float(d.get("volume", volume))
-	AudioServer.set_bus_volume_db(0, linear_to_db(maxf(volume, 0.001)))
+			music_vol = float(d.get("music", music_vol))
+			sfx_vol = float(d.get("sfx", sfx_vol))
+			render_scale = float(d.get("scale", render_scale))
+	_apply_volumes()
+	get_viewport().scaling_3d_scale = render_scale
 
 
 func _save_settings() -> void:
 	var f := FileAccess.open(SETTINGS_PATH, FileAccess.WRITE)
 	if f != null:
-		f.store_string(JSON.stringify({"mouse": mouse_sens, "touch": touch_sens, "volume": volume}))
+		f.store_string(JSON.stringify({"mouse": mouse_sens, "touch": touch_sens, "volume": volume, "music": music_vol, "sfx": sfx_vol, "scale": render_scale}))
 		f.close()
 
 
@@ -2025,6 +2218,7 @@ func _build_menu(has_save: bool) -> void:
 	btn_new = _menu_button(box, "Yeni Oyun")
 	btn_new.pressed.connect(_on_new_game)
 	_menu_button(box, "Gelişim Ağacı").pressed.connect(_open_tree_from_menu)
+	_menu_button(box, "Albüm").pressed.connect(_open_album_from_menu)
 	_menu_button(box, "Ayarlar").pressed.connect(_on_settings_pressed)
 	if not OS.has_feature("web"):
 		_menu_button(box, "Çıkış").pressed.connect(_on_quit_pressed)
@@ -2034,12 +2228,19 @@ func _build_menu(has_save: bool) -> void:
 	menu_settings.visible = false
 	menu_layer.add_child(menu_settings)
 	var sbox := _menu_box(menu_settings)
+	sbox.position.y = 30
+	sbox.add_theme_constant_override("separation", 6)
 	_menu_label(sbox, "AYARLAR", 44, Color("ffd36b"))
 	_slider(sbox, "Fare hassasiyeti", 0.0005, 0.008, mouse_sens, func(v: float): mouse_sens = v)
 	_slider(sbox, "Dokunmatik hassasiyet", 0.001, 0.015, touch_sens, func(v: float): touch_sens = v)
-	_slider(sbox, "Ses", 0.0, 1.0, volume, _set_volume)
+	_slider(sbox, "Genel ses", 0.0, 1.0, volume, _set_volume)
+	_slider(sbox, "Müzik", 0.0, 1.0, music_vol, _set_music)
+	_slider(sbox, "Efektler", 0.0, 1.0, sfx_vol, _set_sfx)
+	_slider(sbox, "Görüntü çözünürlüğü (düşük = daha akıcı)", 0.5, 1.0, render_scale, _set_scale)
+	_menu_button(sbox, "Rehberi baştan göster").pressed.connect(_on_tutorial_restart)
 	_menu_button(sbox, "Geri").pressed.connect(_on_settings_back)
 	_build_tree()
+	_build_album()
 	menu_layer.visible = false
 
 
@@ -2119,6 +2320,8 @@ func _on_tree_pressed(key: String) -> void:
 
 
 func _open_tree_from_menu() -> void:
+	if tut_step == 5:
+		tut_flag = true
 	menu_main.visible = false
 	menu_tree.visible = true
 	_refresh_tree()
@@ -2127,6 +2330,8 @@ func _open_tree_from_menu() -> void:
 func _open_tree() -> void:
 	if menu_layer == null:
 		return
+	if tut_step == 5:
+		tut_flag = true
 	_open_menu()
 	menu_main.visible = false
 	menu_settings.visible = false
@@ -2157,7 +2362,22 @@ func _on_quit_pressed() -> void:
 
 func _set_volume(v: float) -> void:
 	volume = v
-	AudioServer.set_bus_volume_db(0, linear_to_db(maxf(v, 0.001)))
+	_apply_volumes()
+
+
+func _set_music(v: float) -> void:
+	music_vol = v
+	_apply_volumes()
+
+
+func _set_sfx(v: float) -> void:
+	sfx_vol = v
+	_apply_volumes()
+
+
+func _set_scale(v: float) -> void:
+	render_scale = v
+	get_viewport().scaling_3d_scale = v
 
 
 func _slider(parent: Node, title: String, lo: float, hi: float, value: float, on_change: Callable) -> void:
@@ -2180,6 +2400,7 @@ func _open_menu() -> void:
 	menu_main.visible = true
 	menu_settings.visible = false
 	menu_tree.visible = false
+	menu_album.visible = false
 	new_confirm = false
 	btn_new.text = "Yeni Oyun"
 	btn_save.text = "Kaydet"
@@ -2254,8 +2475,9 @@ func _build_hud() -> void:
 		hud_hand.position = Vector2(20, 200)
 		help.text = "Sol taraf: yürü  •  Sağ taraf: sürükle bak, dokun al/koy\n< >: eldeki tasoyu seç  •  Ağaç: gelişim ağacı"
 		_build_touch_ui(layer)
-	else:
-		help.text = "WASD yürü  •  Shift koş  •  Boşluk zıpla  •  Fare bak\nSol tık: taso al / boş yuvaya koy / dolu yuvadakini eline al\nTekerlek: eldeki tasoyu seç\nQ: seçiliyi bırak  •  Sağ tık: hepsini bırak\nTab: gelişim ağacı  •  Z/F/G: büyüler  •  Esc: menü"
+	_build_tutorial(layer)
+	if not touch_mode:
+		help.text = "WASD yürü  •  Shift koş  •  Boşluk zıpla  •  Fare bak\nSol tık: taso al / boş yuvaya koy / dolu yuvadakini eline al\nTekerlek: eldeki tasoyu seç\nQ: seçiliyi bırak  •  Sağ tık: hepsini bırak\nTab: gelişim ağacı  •  B: albüm  •  Z/F/G: büyüler  •  Esc: menü"
 
 
 func _taso_name(i: int) -> String:
@@ -2333,3 +2555,438 @@ func _update_hud() -> void:
 		pass
 	else:
 		hud_center.text = ""
+
+
+# ---------------- Dükkân dönüşümü ----------------
+## Dükkân düzenlendikçe aydınlanır: başta loş, soluk renkli, havada toz, yerde kir lekeleri.
+const MILESTONES := [0.02, 0.1, 0.25, 0.5, 0.75, 0.9]
+var order_applied := -1.0
+
+
+func _noise_tex(freq: float, seed_v: int, points: Array) -> NoiseTexture2D:
+	var n := FastNoiseLite.new()
+	n.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	n.frequency = freq
+	n.fractal_octaves = 4
+	n.seed = seed_v
+	var t := NoiseTexture2D.new()
+	t.width = 256
+	t.height = 256
+	t.seamless = true
+	t.noise = n
+	var gr := Gradient.new()
+	gr.offsets = PackedFloat32Array()
+	gr.colors = PackedColorArray()
+	for pt in points:
+		gr.add_point(float(pt[0]), pt[1])
+	t.color_ramp = gr
+	return t
+
+
+func _dust_texture() -> NoiseTexture2D:
+	if dust_tex == null:
+		dust_tex = _noise_tex(0.025, 3, [[0.0, Color(1, 1, 1, 0.05)], [0.45, Color(1, 1, 1, 0.45)], [1.0, Color(1, 1, 1, 1.0)]])
+	return dust_tex
+
+
+func _build_atmosphere() -> void:
+	# havada süzülen toz zerreleri
+	var dot := GradientTexture2D.new()
+	dot.width = 32
+	dot.height = 32
+	dot.fill = GradientTexture2D.FILL_RADIAL
+	dot.fill_from = Vector2(0.5, 0.5)
+	dot.fill_to = Vector2(1.0, 0.5)
+	var dg := Gradient.new()
+	dg.set_color(0, Color(1, 1, 1, 1))
+	dg.set_color(1, Color(1, 1, 1, 0))
+	dot.gradient = dg
+	dust_mat = StandardMaterial3D.new()
+	dust_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	dust_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	dust_mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	dust_mat.albedo_texture = dot
+	dust_mat.albedo_color = Color(1.0, 0.95, 0.82, 0.6)
+	var qm := QuadMesh.new()
+	qm.size = Vector2(0.05, 0.05)
+	qm.material = dust_mat
+	var motes := CPUParticles3D.new()
+	motes.amount = 160 if touch_mode else 360
+	motes.lifetime = 14.0
+	motes.preprocess = 14.0
+	motes.mesh = qm
+	motes.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+	motes.emission_box_extents = Vector3(ROOM_W / 2.0 - 2.0, 4.5, ROOM_D / 2.0 - 2.0)
+	motes.position = Vector3(0, 4.8, 0)
+	motes.direction = Vector3(0, 1, 0)
+	motes.spread = 180.0
+	motes.gravity = Vector3(0, -0.015, 0)
+	motes.initial_velocity_min = 0.03
+	motes.initial_velocity_max = 0.14
+	motes.scale_amount_min = 0.5
+	motes.scale_amount_max = 1.4
+	add_child(motes)
+
+	# yerde kir lekeleri
+	dirt_mat = StandardMaterial3D.new()
+	dirt_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	dirt_mat.albedo_texture = _noise_tex(0.02, 11, [[0.0, Color(1, 1, 1, 0)], [0.5, Color(1, 1, 1, 0)], [0.75, Color(1, 1, 1, 0.6)], [1.0, Color(1, 1, 1, 1)]])
+	dirt_mat.albedo_color = Color(0.2, 0.14, 0.09, 0.75)
+	dirt_mat.roughness = 1.0
+	var pm := PlaneMesh.new()
+	pm.size = Vector2(2.2, 2.2)
+	var dmm := MultiMesh.new()
+	dmm.transform_format = MultiMesh.TRANSFORM_3D
+	dmm.mesh = pm
+	dmm.instance_count = 110
+	var hw := ROOM_W / 2.0 - 1.5
+	var hd := ROOM_D / 2.0 - 1.5
+	for k in dmm.instance_count:
+		var pos: Vector3
+		if k < 85:
+			pos = Vector3(randf_range(-hw, hw), 0.006, randf_range(-hd, hd - 2.0))
+		else:
+			pos = Vector3(randf_range(-hw, hw), MEZZ_Y + 0.006, randf_range(-hd, MEZZ_EDGE_Z - 1.0))
+		var sc := randf_range(0.6, 1.8)
+		dmm.set_instance_transform(k, Transform3D(Basis(Vector3.UP, randf() * TAU).scaled(Vector3(sc, 1, sc * randf_range(0.6, 1.3))), pos))
+	var dmi := MultiMeshInstance3D.new()
+	dmi.multimesh = dmm
+	dmi.material_override = dirt_mat
+	dmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(dmi)
+
+	# kutlama konfetisi
+	confetti_mesh = QuadMesh.new()
+	confetti_mesh.size = Vector2(0.07, 0.045)
+	var cm := StandardMaterial3D.new()
+	cm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	cm.vertex_color_use_as_albedo = true
+	cm.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	cm.cull_mode = BaseMaterial3D.CULL_DISABLED
+	confetti_mesh.material = cm
+
+	for g in set_count:
+		_shelf_look(g, 0, false)
+
+
+func _milestone_for(p: float) -> int:
+	var m := 0
+	for k in MILESTONES.size():
+		if p >= float(MILESTONES[k]):
+			m = k + 1
+	return m
+
+
+func _update_order(delta: float) -> void:
+	var p := float(correct) / float(set_count * NUMBERS_PER_SET)
+	if order_vis < 0.0:
+		order_vis = p
+	order_vis = move_toward(order_vis, p, delta * 0.03)
+	if absf(order_vis - order_applied) > 0.0005:
+		order_applied = order_vis
+		var e := pow(order_vis, 0.6)
+		env.ambient_light_energy = lerpf(0.34, 0.6, e)
+		env.adjustment_saturation = lerpf(0.72, 1.04, e)
+		env.adjustment_brightness = lerpf(0.88, 1.0, e)
+		sun.light_energy = lerpf(0.3, 0.6, e)
+		var lc := Color(1.0, 0.82, 0.62).lerp(Color(1.0, 0.94, 0.84), e)
+		for lamp in lamps:
+			var l: OmniLight3D = lamp
+			l.light_energy = lerpf(0.95, 1.55, e)
+			l.light_color = lc
+		dust_mat.albedo_color.a = lerpf(0.65, 0.05, e)
+		dirt_mat.albedo_color.a = lerpf(0.75, 0.0, e)
+	var m := _milestone_for(p)
+	if m > milestone and message_time < 0.5:
+		milestone = m
+		_say("Dükkân aydınlanıyor: %%%d düzenli" % roundi(float(MILESTONES[m - 1]) * 100.0))
+	elif m < milestone:
+		milestone = m
+
+
+## Vitrinin kendi görünümü: doğru taso arttıkça LED yanar, camdaki toz silinir
+func _shelf_look(g: int, good: int, done: bool) -> void:
+	var fr := float(good) / NUMBERS_PER_SET
+	var lm: StandardMaterial3D = shelf_led_mats[g]
+	lm.albedo_color = Color(1.0, 0.98, 0.9) if done else Color(0.2, 0.18, 0.15).lerp(Color("fff3d6"), sqrt(fr))
+	var dm: StandardMaterial3D = shelf_dust_mats[g]
+	dm.albedo_color.a = 0.32 * pow(1.0 - fr, 1.4)
+
+
+## Vitrin tamamlanınca konfeti
+func _celebrate(g: int) -> void:
+	var shelf: Node3D = shelves[g]
+	var top_y := BOARD_Y + (SLOT_ROWS * SLOT_GAP + 0.3) / 2.0
+	var p := CPUParticles3D.new()
+	p.one_shot = true
+	p.amount = 160
+	p.lifetime = 3.0
+	p.explosiveness = 0.85
+	p.mesh = confetti_mesh
+	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+	p.emission_box_extents = Vector3(1.3, 0.05, 0.1)
+	p.direction = Vector3(0, 1, 0.5)
+	p.spread = 35.0
+	p.initial_velocity_min = 3.0
+	p.initial_velocity_max = 6.0
+	p.gravity = Vector3(0, -4.0, 0)
+	p.damping_min = 0.8
+	p.damping_max = 1.6
+	p.angle_max = 360.0
+	p.angular_velocity_min = -300.0
+	p.angular_velocity_max = 300.0
+	p.scale_amount_min = 0.7
+	p.scale_amount_max = 1.3
+	var gr := Gradient.new()
+	gr.set_color(0, _set_color(g))
+	gr.set_color(1, Color("ffd36b"))
+	gr.add_point(0.5, Color.WHITE)
+	p.color_initial_ramp = gr
+	p.position = Vector3(0, top_y + 0.4, 0.35)
+	shelf.add_child(p)
+	p.emitting = true
+	get_tree().create_timer(4.5).timeout.connect(p.queue_free)
+
+
+# ---------------- Albüm ----------------
+const ALBUM_COLS := 15
+const ALBUM_SHADER := """shader_type canvas_item;
+uniform vec2 cell = vec2(0.0);
+uniform float locked = 0.0;
+uniform vec2 grid = vec2(13.0, 12.0);
+void fragment() {
+	vec2 uv = clamp(UV, vec2(0.012), vec2(0.988));
+	vec4 c = texture(TEXTURE, (cell + uv) / grid);
+	float g = dot(c.rgb, vec3(0.3, 0.59, 0.11));
+	c.rgb = mix(c.rgb, vec3(0.05 + g * 0.12), locked);
+	float d = length(UV - 0.5);
+	c.a = smoothstep(0.5, 0.475, d);
+	float rim = smoothstep(0.455, 0.48, d);
+	c.rgb = mix(c.rgb, vec3(0.85, 0.7, 0.45), rim * (1.0 - locked * 0.6));
+	COLOR = c;
+}
+"""
+var album_from_menu := false
+
+
+func _build_album() -> void:
+	menu_album = Control.new()
+	menu_album.size = Vector2(1600, 900)
+	menu_album.visible = false
+	menu_layer.add_child(menu_album)
+	album_title = _menu_label(menu_album, "", 40, Color("ffd36b"))
+	album_title.position = Vector2(0, 18)
+	album_title.size = Vector2(1600, 56)
+	album_count = _menu_label(menu_album, "", 20, Color(1, 1, 1, 0.85))
+	album_count.position = Vector2(0, 74)
+	album_count.size = Vector2(1600, 30)
+	var sh := Shader.new()
+	sh.code = ALBUM_SHADER
+	var pitch := 62.0
+	var x0 := (1600.0 - ALBUM_COLS * pitch) / 2.0 + 2.0
+	var y0 := 112.0
+	for n in NUMBERS_PER_SET:
+		var tr := TextureRect.new()
+		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		tr.stretch_mode = TextureRect.STRETCH_SCALE
+		tr.position = Vector2(x0 + (n % ALBUM_COLS) * pitch, y0 + floori(n / float(ALBUM_COLS)) * pitch)
+		tr.size = Vector2(pitch - 4.0, pitch - 4.0)
+		var m := ShaderMaterial.new()
+		m.shader = sh
+		m.set_shader_parameter("cell", Vector2(n % 13, floori(n / 13.0)))
+		tr.material = m
+		menu_album.add_child(tr)
+		album_cells.append(tr)
+	var prev := _menu_button(menu_album, "<")
+	prev.custom_minimum_size = Vector2(80, 90)
+	prev.size = Vector2(80, 90)
+	prev.position = Vector2(x0 - 120, 380)
+	prev.pressed.connect(func(): _album_show(posmod(album_set - 1, set_count)))
+	var next := _menu_button(menu_album, ">")
+	next.custom_minimum_size = Vector2(80, 90)
+	next.size = Vector2(80, 90)
+	next.position = Vector2(x0 + ALBUM_COLS * pitch + 36, 380)
+	next.pressed.connect(func(): _album_show(posmod(album_set + 1, set_count)))
+	var tx0 := (1600.0 - set_count * 44.0) / 2.0
+	for g in set_count:
+		var b := Button.new()
+		b.text = SETS[g]["code"]
+		b.position = Vector2(tx0 + g * 44.0, 745)
+		b.size = Vector2(41, 40)
+		b.focus_mode = Control.FOCUS_NONE
+		b.add_theme_font_size_override("font_size", 14)
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = _set_color(g).darkened(0.55)
+		sb.border_color = _set_color(g)
+		sb.set_border_width_all(2)
+		sb.set_corner_radius_all(6)
+		b.add_theme_stylebox_override("normal", sb)
+		b.add_theme_stylebox_override("hover", sb)
+		b.add_theme_stylebox_override("pressed", sb)
+		b.pressed.connect(_album_show.bind(g))
+		menu_album.add_child(b)
+		album_tabs.append(b)
+	var back := _menu_button(menu_album, "Geri")
+	back.position = Vector2(590, 808)
+	back.pressed.connect(_album_back)
+
+
+func _album_show(g: int) -> void:
+	album_set = g
+	var path := "res://assets/art/set_%02d.jpg" % g
+	var tex: Texture2D = load(path) if ResourceLoader.exists(path) else null
+	var got := 0
+	for n in NUMBERS_PER_SET:
+		var i: int = idx_of_uid[g * NUMBERS_PER_SET + n]
+		var open: bool = paid[i]
+		if open:
+			got += 1
+		var tr: TextureRect = album_cells[n]
+		tr.texture = tex
+		(tr.material as ShaderMaterial).set_shader_parameter("locked", 0.0 if open else 1.0)
+		tr.tooltip_text = ("%s %d" % [SETS[g]["code"], n + 1]) if open else "?"
+	var total := 0
+	for v in paid:
+		if v:
+			total += 1
+	album_title.text = "ALBÜM  •  %s (%s)" % [SETS[g]["name"], SETS[g]["code"]]
+	album_count.text = "Bu sette açılan canlı: %d / %d        Tüm koleksiyon: %d / %d" % [got, NUMBERS_PER_SET, total, paid.size()]
+	for k in album_tabs.size():
+		var b: Button = album_tabs[k]
+		b.modulate = Color(1.6, 1.6, 1.6) if k == g else Color(1, 1, 1, 0.75)
+
+
+func _open_album() -> void:
+	if menu_layer == null:
+		return
+	var sg := _selected_grp()
+	if sg != -1:
+		album_set = sg
+	_open_menu()
+	menu_main.visible = false
+	menu_album.visible = true
+	album_from_menu = false
+	_album_show(album_set)
+
+
+func _open_album_from_menu() -> void:
+	menu_main.visible = false
+	menu_album.visible = true
+	album_from_menu = true
+	_album_show(album_set)
+
+
+func _album_back() -> void:
+	if album_from_menu:
+		menu_album.visible = false
+		menu_main.visible = true
+	else:
+		_close_menu()
+
+
+# ---------------- İlk açılış rehberi ----------------
+## Her adım: [bilgisayar metni, dokunmatik metni]
+const TUT := [
+	["Yerdeki tasolar 34 farklı sete ait. Bir tasoya bak ve sol tıkla: eline alırsın.",
+		"Yerdeki tasolar 34 farklı sete ait. Ekranın sağ tarafında bir tasoya dokun: eline alırsın."],
+	["Fare tekerleğiyle eldeki tasolar arasında geç. Seçili taso en önde durur.",
+		"< > butonlarıyla eldeki tasolar arasında geç. Seçili taso en önde durur."],
+	["Her setin bir vitrini var; vitrin başlığının rengi tasonun rengiyle aynı. Seçili tasonun vitrinini bul ve ona bak.",
+		"Her setin bir vitrini var; vitrin başlığının rengi tasonun rengiyle aynı. Seçili tasonun vitrinini bul ve ona bak."],
+	["Vitrinde numara yazmaz: tasolar 1'den 150'ye soldan sağa, yukarıdan aşağı dizilir. Boş bir yuvaya tıklayıp tasoyu koy.",
+		"Vitrinde numara yazmaz: tasolar 1'den 150'ye soldan sağa, yukarıdan aşağı dizilir. Boş bir yuvaya dokunup tasoyu koy."],
+	["Yanlış yerdeki taso kırmızı halkayla görünür; dolu bir yuvaya tıklarsan oradaki taso eline geri gelir. Doğru taso +1, bir türün 3 evrimi yan yana +2, biten vitrin +25 puan.",
+		"Yanlış yerdeki taso kırmızı halkayla görünür; dolu bir yuvaya dokunursan oradaki taso eline geri gelir. Doğru taso +1, bir türün 3 evrimi yan yana +2, biten vitrin +25 puan."],
+	["Puanlarını gelişim ağacında harcarsın. Açmak için Tab tuşuna bas.",
+		"Puanlarını gelişim ağacında harcarsın. Açmak için Ağaç butonuna dokun."],
+	["Hazırsın! Dükkân düzenlendikçe aydınlanır, tozu kalkar. Açtığın canlılar Albüm'de birikir (B tuşu ya da menü).",
+		"Hazırsın! Dükkân düzenlendikçe aydınlanır, tozu kalkar. Açtığın canlılar menüdeki Albüm'de birikir."],
+]
+
+
+func _build_tutorial(layer: CanvasLayer) -> void:
+	tut_panel = PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.1, 0.07, 0.05, 0.88)
+	sb.set_corner_radius_all(14)
+	sb.border_color = Color("c9a46a")
+	sb.set_border_width_all(2)
+	sb.set_content_margin_all(16)
+	tut_panel.add_theme_stylebox_override("panel", sb)
+	tut_panel.position = Vector2(360, 600)
+	tut_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tut_label = Label.new()
+	tut_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	tut_label.custom_minimum_size = Vector2(848, 0)
+	tut_label.add_theme_font_size_override("font_size", 21)
+	tut_label.add_theme_color_override("font_color", Color("f6e7c8"))
+	tut_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tut_panel.add_child(tut_label)
+	layer.add_child(tut_panel)
+	if touch_mode:
+		tut_skip_btn = _touch_button(layer, "Rehberi geç", Vector2(360, 525), Vector2(200, 62))
+		tut_skip_btn.pressed.connect(_tut_skip)
+
+
+func _tut_show() -> void:
+	if tut_panel == null:
+		return
+	tut_panel.visible = tut_step >= 0
+	if tut_skip_btn != null:
+		tut_skip_btn.visible = tut_step >= 0
+	if tut_step < 0:
+		return
+	var row: Array = TUT[tut_step]
+	var txt: String = row[1] if touch_mode else row[0]
+	var hint := "" if touch_mode else "     (H: rehberi geç)"
+	tut_label.text = "Rehber %d/%d%s\n%s" % [tut_step + 1, TUT.size(), hint, txt]
+	tut_panel.reset_size()
+
+
+func _tut_update(delta: float) -> void:
+	if tut_step < 0:
+		return
+	tut_time += delta
+	var done := false
+	match tut_step:
+		0:
+			done = not hand.is_empty()
+		1:
+			done = tut_flag or tut_time > 9.0 or hand.size() < 2 and tut_time > 5.0
+		2:
+			if target.get("kind", "") == "shelf":
+				var body: Node = target["body"]
+				done = hand.is_empty() or int(body.get_meta("grp")) == int(tasos[hand[sel]]["grp"])
+		3:
+			done = placed > tut_mark
+		4:
+			done = tut_time > 10.0
+		5:
+			done = tut_flag
+		6:
+			done = tut_time > 9.0
+	if done:
+		tut_step += 1
+		tut_time = 0.0
+		tut_flag = false
+		tut_mark = placed
+		if tut_step >= TUT.size():
+			tut_step = -1
+		save_dirty = true
+		_tut_show()
+
+
+func _tut_skip() -> void:
+	tut_step = -1
+	save_dirty = true
+	_tut_show()
+
+
+func _on_tutorial_restart() -> void:
+	tut_step = 0
+	tut_time = 0.0
+	tut_flag = false
+	tut_mark = placed
+	_tut_show()
+	_save_settings()
+	_close_menu()
