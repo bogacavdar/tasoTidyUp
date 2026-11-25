@@ -152,6 +152,22 @@ var snd_holo: AudioStreamWAV
 var snd_set: AudioStreamWAV
 var last_sfx_frame := -1
 
+# Dokunmatik (telefon) kontrolleri
+const TOUCH_LOOK_SENS := 0.005
+const JOY_RADIUS := 110.0
+var touch_mode := false
+var move_id := -1
+var move_origin := Vector2.ZERO
+var touch_move := Vector2.ZERO
+var look_id := -1
+var look_start := Vector2.ZERO
+var look_start_ms := 0
+var look_travel := 0.0
+var touch_jump := false
+var touch_sprint := false
+var joy_base: Panel
+var joy_knob: Panel
+
 var hud_stats: Label
 var hud_info: Label
 var hud_hand: Label
@@ -162,6 +178,7 @@ var hud_center: Label
 
 func _ready() -> void:
 	randomize()
+	touch_mode = OS.has_feature("mobile") or OS.has_feature("web_android") or OS.has_feature("web_ios")
 	_init_skills()
 	_make_set_colors()
 	_build_atlas()
@@ -876,17 +893,19 @@ func _physics_process(delta: float) -> void:
 		mv.x += 1
 	if Input.is_key_pressed(KEY_A):
 		mv.x -= 1
+	if touch_move != Vector2.ZERO:
+		mv += Vector2(touch_move.x, -touch_move.y)
 	var fwd := -player.global_transform.basis.z
 	var right := player.global_transform.basis.x
 	var d := fwd * mv.y + right * mv.x
 	d.y = 0
-	d = d.normalized()
-	var sprint := Input.is_key_pressed(KEY_SHIFT)
+	d = d.normalized() * minf(mv.length(), 1.0)
+	var sprint := Input.is_key_pressed(KEY_SHIFT) or touch_sprint
 	var speed := WALK_SPEED * (SPRINT_MULT if sprint else 1.0)
 	player.velocity.x = d.x * speed
 	player.velocity.z = d.z * speed
 	if player.is_on_floor():
-		if Input.is_key_pressed(KEY_SPACE):
+		if Input.is_key_pressed(KEY_SPACE) or touch_jump:
 			player.velocity.y = JUMP_VELOCITY
 	else:
 		player.velocity.y -= GRAVITY * delta
@@ -924,6 +943,9 @@ func _process(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventScreenTouch or event is InputEventScreenDrag:
+		_touch_input(event)
+		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		player.rotate_y(-event.relative.x * MOUSE_SENS)
 		cam.rotation.x = clampf(cam.rotation.x - event.relative.y * MOUSE_SENS, -1.5, 1.5)
@@ -956,6 +978,102 @@ func _unhandled_input(event: InputEvent) -> void:
 				_try_buy("avuc")
 			KEY_3:
 				_try_buy("holo")
+
+
+## Sol yarı: sanal joystick. Sağ yarı: sürükleyerek bak, kısa dokunuşla kullan.
+func _touch_input(event: InputEvent) -> void:
+	var vw := get_viewport().get_visible_rect().size.x
+	if event is InputEventScreenTouch:
+		var e: InputEventScreenTouch = event
+		if e.pressed:
+			if e.position.x < vw * 0.45 and move_id == -1:
+				move_id = e.index
+				move_origin = e.position
+				touch_move = Vector2.ZERO
+				joy_base.position = e.position - joy_base.size / 2.0
+				joy_knob.position = e.position - joy_knob.size / 2.0
+				joy_base.visible = true
+				joy_knob.visible = true
+			elif look_id == -1:
+				look_id = e.index
+				look_start = e.position
+				look_start_ms = Time.get_ticks_msec()
+				look_travel = 0.0
+		else:
+			if e.index == move_id:
+				move_id = -1
+				touch_move = Vector2.ZERO
+				joy_base.visible = false
+				joy_knob.visible = false
+			elif e.index == look_id:
+				look_id = -1
+				if look_travel < 25.0 and Time.get_ticks_msec() - look_start_ms < 350:
+					_on_use()
+	elif event is InputEventScreenDrag:
+		var e: InputEventScreenDrag = event
+		if e.index == move_id:
+			var off := e.position - move_origin
+			if off.length() > JOY_RADIUS:
+				off = off.normalized() * JOY_RADIUS
+			touch_move = off / JOY_RADIUS
+			joy_knob.position = move_origin + off - joy_knob.size / 2.0
+		elif e.index == look_id:
+			look_travel += e.relative.length()
+			player.rotate_y(-e.relative.x * TOUCH_LOOK_SENS)
+			cam.rotation.x = clampf(cam.rotation.x - e.relative.y * TOUCH_LOOK_SENS, -1.5, 1.5)
+
+
+func _round_panel(col: Color, size: float) -> Panel:
+	var pn := Panel.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = col
+	sb.set_corner_radius_all(int(size / 2.0))
+	pn.add_theme_stylebox_override("panel", sb)
+	pn.size = Vector2(size, size)
+	pn.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pn.visible = false
+	return pn
+
+
+func _touch_button(parent: Node, text: String, pos: Vector2, size: Vector2) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.position = pos
+	b.size = size
+	b.focus_mode = Control.FOCUS_NONE
+	b.add_theme_font_size_override("font_size", 24)
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0, 0, 0, 0.35)
+	sb.set_corner_radius_all(18)
+	sb.border_color = Color(1, 1, 1, 0.5)
+	sb.set_border_width_all(2)
+	b.add_theme_stylebox_override("normal", sb)
+	b.add_theme_stylebox_override("hover", sb)
+	var sbp := sb.duplicate() as StyleBoxFlat
+	sbp.bg_color = Color(1, 1, 1, 0.3)
+	b.add_theme_stylebox_override("pressed", sbp)
+	parent.add_child(b)
+	return b
+
+
+func _build_touch_ui(layer: CanvasLayer) -> void:
+	joy_base = _round_panel(Color(1, 1, 1, 0.15), JOY_RADIUS * 2.0)
+	joy_knob = _round_panel(Color(1, 1, 1, 0.45), 90.0)
+	layer.add_child(joy_base)
+	layer.add_child(joy_knob)
+	var jump := _touch_button(layer, "Zıpla", Vector2(1420, 700), Vector2(150, 150))
+	jump.button_down.connect(func(): touch_jump = true)
+	jump.button_up.connect(func(): touch_jump = false)
+	var run := _touch_button(layer, "Koş", Vector2(1260, 760), Vector2(140, 100))
+	run.toggle_mode = true
+	run.toggled.connect(func(on: bool): touch_sprint = on)
+	_touch_button(layer, "Bırak", Vector2(1420, 560), Vector2(150, 110)).pressed.connect(func(): _drop(true))
+	_touch_button(layer, "Hepsini\nbırak", Vector2(1260, 620), Vector2(140, 110)).pressed.connect(func(): _drop(false))
+	_touch_button(layer, "<", Vector2(20, 110), Vector2(90, 80)).pressed.connect(func(): _cycle(-1))
+	_touch_button(layer, ">", Vector2(120, 110), Vector2(90, 80)).pressed.connect(func(): _cycle(1))
+	for k in SKILL_ORDER.size():
+		var key: String = SKILL_ORDER[k]
+		_touch_button(layer, str(k + 1), Vector2(1280 + k * 100, 120), Vector2(85, 75)).pressed.connect(func(): _try_buy(key))
 
 
 func _cycle(dir: int) -> void:
@@ -1314,7 +1432,12 @@ func _build_hud() -> void:
 	hud_hand = _mk_label(layer, Vector2(20, 50), 18, Color(1, 1, 1, 0.9))
 	hud_skills = _mk_label(layer, Vector2(20, 760), 17, Color(1, 1, 1, 0.9))
 	var help := _mk_label(layer, Vector2(1040, 14), 14, Color(1, 1, 1, 0.6))
-	help.text = "WASD yürü  •  Shift koş  •  Boşluk zıpla  •  Fare bak\nSol tık: taso al / yuvaya koy / dolu yuvadan geri al veya değiştir\nTekerlek: eldeki tasoyu seç\nQ: seçiliyi bırak  •  Sağ tık: hepsini bırak\n1-3: yetenek satın al  •  R: yeniden  •  Esc: fareyi bırak"
+	if touch_mode:
+		hud_hand.position = Vector2(20, 200)
+		help.text = "Sol taraf: yürü  •  Sağ taraf: sürükle bak, dokun al/koy\n< >: eldeki tasoyu seç  •  1-3: yetenek satın al"
+		_build_touch_ui(layer)
+	else:
+		help.text = "WASD yürü  •  Shift koş  •  Boşluk zıpla  •  Fare bak\nSol tık: taso al / yuvaya koy / dolu yuvadan geri al veya değiştir\nTekerlek: eldeki tasoyu seç\nQ: seçiliyi bırak  •  Sağ tık: hepsini bırak\n1-3: yetenek satın al  •  R: yeniden  •  Esc: fareyi bırak"
 
 
 func _taso_name(i: int) -> String:
@@ -1371,7 +1494,7 @@ func _update_hud() -> void:
 	hud_msg.text = message if message_time > 0.0 else ""
 	if finished:
 		hud_center.text = "TÜM VİTRİNLER TAMAM!\nSüre %02d:%02d  •  R ile yeniden başla" % [floori(s / 60.0), s % 60]
-	elif Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+	elif not touch_mode and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		hud_center.text = "Oynamak için tıkla"
 	else:
 		hud_center.text = ""
