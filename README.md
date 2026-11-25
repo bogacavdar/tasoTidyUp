@@ -10,6 +10,7 @@ Godot ile yapılan bir "kaostan düzene" toplu dizme oyunu. Oyuncu birinci şah�
 - Yuvalarda numara yazmıyor. Her taso her yuvaya konabilir, sırayı oyuncu kurar (soldan sağa, yukarıdan aşağı 1-150).
 - Yanlış yerdeki taso kırmızı halkayla gösterilir. Tamamen doğru dizilen vitrin yeşile döner.
 - Dolu yuvaya tıklayınca taso geri alınır ya da elindeki seçili tasoyla yer değiştirir.
+- Doğru yere oturan taso çan sesi çıkarır (holo ve tamamlanan vitrin için ayrı sesler, kodda sentezleniyor).
 - Jeton sadece bir taso doğru yere ilk kez oturduğunda verilir.
 - Taso yüzlerinde set kodu ve numara var. Shader bunları küçük bir rakam/kod atlasından anında oluşturur. Holo tasolar gökkuşağı gibi parlar.
 - Elde birden fazla taso tutulabilir (başta 10, Avuç ile 40). Fare tekerleğiyle seçim yapılır.

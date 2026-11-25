@@ -119,6 +119,12 @@ var set_bonus_paid: Array[bool] = []
 var paid: Array[bool] = []            # bu taso doğru yere ilk kez oturunca jeton verildi mi
 var hidden_xf := Transform3D(Basis().scaled(Vector3.ONE * 0.0001), Vector3(0, -50, 0))
 
+var sfx: AudioStreamPlayer
+var snd_correct: AudioStreamWAV
+var snd_holo: AudioStreamWAV
+var snd_set: AudioStreamWAV
+var last_sfx_frame := -1
+
 var hud_stats: Label
 var hud_info: Label
 var hud_hand: Label
@@ -138,6 +144,7 @@ func _ready() -> void:
 	_spawn_tasos()
 	_build_pile()
 	_build_hud()
+	_build_sounds()
 	_say("Bir yığına yürü, tasoya bak ve sol tıkla!")
 
 
@@ -757,6 +764,7 @@ func _place(i: int, g: int, n: int) -> void:
 	shelf_mm.set_instance_custom_data(mi, _custom(i))
 	if _is_correct(g, n):
 		correct += 1
+		_play(snd_holo if t["holo"] else snd_correct)
 		if not paid[i]:
 			paid[i] = true
 			coins += COIN_HOLO if t["holo"] else COIN_PLACE
@@ -803,6 +811,7 @@ func _check_shelf(g: int) -> void:
 		for k in NUMBERS_PER_SET:
 			_refresh_ring(g, k)
 		if done:
+			_play(snd_set, true)
 			if not set_bonus_paid[g]:
 				set_bonus_paid[g] = true
 				coins += COIN_SET
@@ -878,6 +887,56 @@ func _try_buy(key: String) -> void:
 func _say(s: String) -> void:
 	message = s
 	message_time = 2.5
+
+
+# ---------------- Ses ----------------
+# Ses dosyası yok: kısa çan sesleri kodda sentezleniyor.
+func _build_sounds() -> void:
+	snd_correct = _make_chime([[1046.5, 0.0], [1568.0, 0.05]], 0.5)
+	snd_holo = _make_chime([[1046.5, 0.0], [1318.5, 0.07], [1568.0, 0.14], [2093.0, 0.21]], 0.9)
+	snd_set = _make_chime([[523.3, 0.0], [659.3, 0.13], [784.0, 0.26], [1046.5, 0.39], [1318.5, 0.39], [1568.0, 0.39]], 1.6)
+	sfx = AudioStreamPlayer.new()
+	sfx.max_polyphony = 8
+	sfx.volume_db = -6.0
+	add_child(sfx)
+
+
+## notes: [[frekans, başlangıç sn], ...]; her nota hafif harmonikli, üstel sönümlü sinüs
+func _make_chime(notes: Array, dur: float) -> AudioStreamWAV:
+	var rate := 22050
+	var count := int(rate * dur)
+	var data := PackedByteArray()
+	data.resize(count * 2)
+	for i in count:
+		var t := float(i) / rate
+		var v := 0.0
+		for nt in notes:
+			var f: float = nt[0]
+			var st: float = nt[1]
+			if t < st:
+				continue
+			var lt := t - st
+			var env := exp(-lt * 7.0) * minf(1.0, lt * 300.0)
+			v += (sin(TAU * f * lt) + 0.3 * sin(TAU * f * 2.0 * lt)) * env
+		v = clampf(v * 0.35, -1.0, 1.0)
+		data.encode_s16(i * 2, int(v * 32000.0))
+	var w := AudioStreamWAV.new()
+	w.format = AudioStreamWAV.FORMAT_16_BITS
+	w.mix_rate = rate
+	w.stereo = false
+	w.data = data
+	return w
+
+
+## Aynı karede birden fazla taso oturursa (Otomatik Dizme) tek ses çal
+func _play(stream: AudioStreamWAV, force: bool = false) -> void:
+	var f := Engine.get_process_frames()
+	if f == last_sfx_frame and not force:
+		return
+	last_sfx_frame = f
+	sfx.stream = stream
+	sfx.pitch_scale = randf_range(0.97, 1.03)
+	sfx.play()
 
 
 # ---------------- HUD ----------------
