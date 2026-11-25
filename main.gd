@@ -48,6 +48,11 @@ const SETS := [
 	{"name": "Yıldız Bahçe", "code": "YB", "color": Color("2fbfa5")},
 ]
 const PLAIN := Color("d9cfb8")
+const RING_EMPTY := Color("1c1917")
+const RING_WRONG := Color("ff2a2a")
+const RING_DONE := Color("3fe06a")
+const BOARD_COLOR := Color("2b2623")
+const BOARD_DONE := Color("27502f")
 
 const PILES := [
 	Vector3(-9, 2.0, -5), Vector3(0, 1.8, -6), Vector3(9, 2.1, -4),
@@ -76,7 +81,8 @@ var sel := 0                          # eldeki seçili taso
 var holo_list: Array[int] = []
 var skills := {}
 var coins := 0
-var placed := 0
+var placed := 0                       # vitrinlerdeki taso sayısı
+var correct := 0                      # doğru yerdeki taso sayısı
 var copies := 0
 var elapsed := 0.0
 var anim := 0.0
@@ -101,7 +107,12 @@ var atlas_vp: SubViewport
 var atlas_cols := 1
 var shelves: Array = []
 var shelf_titles: Array = []
-var slot_labels: Array = []
+var ring_mm: MultiMesh
+var board_mats: Array = []
+var header_mats: Array = []
+var shelf_done: Array[bool] = []
+var set_bonus_paid: Array[bool] = []
+var paid: Array[bool] = []            # bu taso doğru yere ilk kez oturunca jeton verildi mi
 var hidden_xf := Transform3D(Basis().scaled(Vector3.ONE * 0.0001), Vector3(0, -50, 0))
 
 var hud_stats: Label
@@ -128,7 +139,7 @@ func _ready() -> void:
 func _init_skills() -> void:
 	skills = {
 		"renk": {"name": "Renk Gözü", "desc": "yığındaki tasolar set rengini gösterir", "cost": [20], "level": 0},
-		"oto": {"name": "Otomatik Numara", "desc": "vitrine tıklayınca elindeki o setin tüm tasoları yerine gider", "cost": [60], "level": 0},
+		"oto": {"name": "Otomatik Dizme", "desc": "vitrine tıklayınca elindeki o setin tasoları doğru boş yuvalarına gider", "cost": [60], "level": 0},
 		"avuc": {"name": "Avuç", "desc": "tek tıkla 3/6/12 taso al, el kapasitesi 15/25/40", "cost": [40, 150, 400], "level": 0},
 		"holo": {"name": "Holo Dedektörü", "desc": "gömülü holo tasolar yığının içinden parlar", "cost": [120], "level": 0},
 	}
@@ -295,17 +306,21 @@ func _build_world() -> void:
 	var board_w := SLOT_COLS * SLOT_GAP + 0.3
 	var board_h := SLOT_ROWS * SLOT_GAP + 0.4
 	var ring_mesh := CylinderMesh.new()
-	ring_mesh.top_radius = TASO_R + 0.012
-	ring_mesh.bottom_radius = TASO_R + 0.012
+	ring_mesh.top_radius = TASO_R + 0.028
+	ring_mesh.bottom_radius = TASO_R + 0.028
 	ring_mesh.height = 0.004
 	ring_mesh.radial_segments = 24
-	var ring_mm := MultiMesh.new()
+	ring_mm = MultiMesh.new()
 	ring_mm.transform_format = MultiMesh.TRANSFORM_3D
+	ring_mm.use_colors = true
 	ring_mm.mesh = ring_mesh
 	ring_mm.instance_count = set_count * NUMBERS_PER_SET
 	var ring_mmi := MultiMeshInstance3D.new()
 	ring_mmi.multimesh = ring_mm
-	ring_mmi.material_override = _mat(Color("1c1917"))
+	var ring_mat := StandardMaterial3D.new()
+	ring_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	ring_mat.vertex_color_use_as_albedo = true
+	ring_mmi.material_override = ring_mat
 	add_child(ring_mmi)
 
 	shelf_mm = _new_mm(set_count * NUMBERS_PER_SET)
@@ -323,8 +338,12 @@ func _build_world() -> void:
 		var col := _set_color(g)
 		var board := _box(shelf, Vector3(board_w, board_h, 0.1), Vector3(0, BOARD_Y, 0), Color("2b2623"), "shelf")
 		board.set_meta("grp", g)
+		board_mats.append((board.get_child(0) as MeshInstance3D).material_override)
 		var header := _box(shelf, Vector3(board_w, 0.32, 0.14), Vector3(0, BOARD_Y + board_h / 2 + 0.16, 0.02), col.darkened(0.15), "shelf")
 		header.set_meta("grp", g)
+		var hm: StandardMaterial3D = (header.get_child(0) as MeshInstance3D).material_override
+		hm.emission = Color("3fae5a")
+		header_mats.append(hm)
 		var counter := _box(shelf, Vector3(board_w, 0.3, 0.45), Vector3(0, 0.15, 0.2), Color("3a302a"), "shelf")
 		counter.set_meta("grp", g)
 
@@ -336,24 +355,16 @@ func _build_world() -> void:
 		shelf.add_child(title)
 		shelf_titles.append(title)
 
-		var row_labels: Array = []
 		var row_slots: Array = []
 		for n in NUMBERS_PER_SET:
 			var sp := _slot_local(n)
 			ring_mm.set_instance_transform(g * NUMBERS_PER_SET + n, shelf.global_transform * Transform3D(Basis(Vector3.RIGHT, PI / 2), sp + Vector3(0, 0, 0.002)))
-			var lb := Label3D.new()
-			lb.text = str(n + 1)
-			lb.font_size = 48
-			lb.pixel_size = 0.0022
-			lb.modulate = Color(1, 1, 1, 0.45)
-			lb.outline_size = 0
-			lb.position = sp + Vector3(0, 0, 0.006)
-			shelf.add_child(lb)
-			row_labels.append(lb)
+			ring_mm.set_instance_color(g * NUMBERS_PER_SET + n, RING_EMPTY)
 			row_slots.append(-1)
 			shelf_mm.set_instance_transform(g * NUMBERS_PER_SET + n, hidden_xf)
-		slot_labels.append(row_labels)
 		slots.append(row_slots)
+		shelf_done.append(false)
+		set_bonus_paid.append(false)
 		_update_title(g)
 
 	# Kopya kutuları
@@ -384,12 +395,15 @@ func _nearest_slot(local: Vector3) -> int:
 
 
 func _update_title(g: int) -> void:
-	var cnt := 0
+	var filled := 0
 	for v in slots[g]:
 		if v != -1:
-			cnt += 1
+			filled += 1
 	var lb: Label3D = shelf_titles[g]
-	lb.text = "%s (%s)   %d/%d" % [SETS[g]["name"], SETS[g]["code"], cnt, NUMBERS_PER_SET]
+	if shelf_done[g]:
+		lb.text = "%s (%s)   TAMAM!" % [SETS[g]["name"], SETS[g]["code"]]
+	else:
+		lb.text = "%s (%s)   %d/%d" % [SETS[g]["name"], SETS[g]["code"], filled, NUMBERS_PER_SET]
 
 
 func _build_player() -> void:
@@ -449,6 +463,7 @@ func _spawn_tasos() -> void:
 		var b := Basis(Vector3.UP, randf() * TAU) * Basis(Vector3.RIGHT, randf_range(-0.45, 0.45))
 		pile_xf.append(Transform3D(b, pos))
 		in_pile.append(true)
+		paid.append(false)
 		_grid_add(i)
 	pile_count = tasos.size()
 
@@ -679,9 +694,6 @@ func _on_use() -> void:
 				return
 			_grab(target["idx"])
 		"shelf":
-			if hand.is_empty():
-				_say("Elin boş")
-				return
 			_use_shelf(target["body"], target["point"])
 		"copy":
 			_use_copy()
@@ -713,68 +725,131 @@ func _grab(first: int) -> void:
 	_rebuild_hand()
 
 
+func _is_correct(g: int, n: int) -> bool:
+	var i: int = slots[g][n]
+	return i != -1 and tasos[i]["grp"] == g and tasos[i]["num"] - 1 == n
+
+
+## Bu tasonun doğru yerinde aynısı zaten duruyor mu? (o zaman kopyadır)
+func _is_copy(i: int) -> bool:
+	var t: Dictionary = tasos[i]
+	return _is_correct(t["grp"], t["num"] - 1) and slots[t["grp"]][t["num"] - 1] != i
+
+
 func _use_shelf(body: Node, hp: Vector3) -> void:
 	var g: int = body.get_meta("grp")
 	var shelf: Node3D = shelves[g]
 	var slot := _nearest_slot(shelf.to_local(hp))
-	if skills["oto"]["level"] > 0:
+
+	# Otomatik Dizme: vitrinin boş bir yerine (ya da çerçevesine) tıklayınca o setin tasoları doğru yerine gider
+	if skills["oto"]["level"] > 0 and (slot == -1 or slots[g][slot] == -1):
 		var keep: Array = []
 		var cnt := 0
 		for i in hand:
 			var t: Dictionary = tasos[i]
-			if t["grp"] == g and slots[g][t["num"] - 1] == -1:
-				_place(i, g)
+			var n: int = t["num"] - 1
+			if t["grp"] == g and slots[g][n] == -1:
+				_place(i, g, n)
 				cnt += 1
 			else:
 				keep.append(i)
 		hand = keep
-		if cnt == 0:
-			_say("Elindekilerin hiçbiri bu vitrine ait değil (ya da yerleri dolu)")
-	else:
+		if cnt > 0:
+			sel = clampi(sel, 0, maxi(hand.size() - 1, 0))
+			_rebuild_hand()
+			return
+
+	if slot == -1:
+		return
+
+	if slots[g][slot] == -1:
+		# Boş yuva: seçili tasoyu koy (her taso her yuvaya konabilir)
+		if hand.is_empty():
+			_say("Elin boş")
+			return
 		var i: int = hand[sel]
-		var t: Dictionary = tasos[i]
-		var n: int = t["num"] - 1
-		if t["grp"] != g:
-			_say("Seçili taso bu vitrine ait değil (tekerlekle değiştir)")
-			return
-		if slots[g][n] != -1:
-			_say("Bunun yeri zaten dolu, kopya! Kopya Kutusu'na at")
-			return
-		if n != slot:
-			_say("Yanlış yuva! Bu taso %d numaralı yuvaya gider" % (n + 1))
-			return
-		_place(i, g)
 		hand.remove_at(sel)
+		_place(i, g, slot)
+	else:
+		# Dolu yuva: el boşsa geri al, doluysa seçiliyle yer değiştir
+		if hand.is_empty():
+			var old := _unplace(g, slot)
+			hand.append(old)
+			sel = 0
+		else:
+			var i: int = hand[sel]
+			var old := _unplace(g, slot)
+			hand[sel] = old
+			_place(i, g, slot)
 	sel = clampi(sel, 0, maxi(hand.size() - 1, 0))
 	_rebuild_hand()
 
 
-func _place(i: int, g: int) -> void:
+func _place(i: int, g: int, n: int) -> void:
 	var t: Dictionary = tasos[i]
-	var n: int = t["num"] - 1
 	slots[g][n] = i
 	placed += 1
 	var shelf: Node3D = shelves[g]
 	var mi := g * NUMBERS_PER_SET + n
 	shelf_mm.set_instance_transform(mi, shelf.global_transform * Transform3D(Basis(Vector3.RIGHT, PI / 2), _slot_local(n) + Vector3(0, 0, 0.009)))
-	shelf_mm.set_instance_color(mi, _set_color(g))
+	shelf_mm.set_instance_color(mi, _set_color(t["grp"]))
 	shelf_mm.set_instance_custom_data(mi, _custom(i))
-	var lb: Label3D = slot_labels[g][n]
-	lb.visible = false
-	coins += COIN_HOLO if t["holo"] else COIN_PLACE
-	if t["holo"]:
-		_say("HOLO! +%d jeton" % COIN_HOLO)
-	_update_title(g)
-	var full := true
-	for v in slots[g]:
-		if v == -1:
-			full = false
+	if _is_correct(g, n):
+		correct += 1
+		if not paid[i]:
+			paid[i] = true
+			coins += COIN_HOLO if t["holo"] else COIN_PLACE
+			if t["holo"]:
+				_say("HOLO! +%d jeton" % COIN_HOLO)
+	_check_shelf(g)
+	_refresh_ring(g, n)
+
+
+func _unplace(g: int, n: int) -> int:
+	var i: int = slots[g][n]
+	if _is_correct(g, n):
+		correct -= 1
+	slots[g][n] = -1
+	placed -= 1
+	shelf_mm.set_instance_transform(g * NUMBERS_PER_SET + n, hidden_xf)
+	_check_shelf(g)
+	_refresh_ring(g, n)
+	return i
+
+
+func _refresh_ring(g: int, n: int) -> void:
+	var c := RING_EMPTY
+	if shelf_done[g]:
+		c = RING_DONE
+	elif slots[g][n] != -1 and not _is_correct(g, n):
+		c = RING_WRONG
+	ring_mm.set_instance_color(g * NUMBERS_PER_SET + n, c)
+
+
+## Vitrin tamamen doğru mu? Değiştiyse rengini ve halkalarını güncelle.
+func _check_shelf(g: int) -> void:
+	var done := true
+	for n in NUMBERS_PER_SET:
+		if not _is_correct(g, n):
+			done = false
 			break
-	if full:
-		coins += COIN_SET
-		_say("%s vitrini tamam! +%d" % [SETS[g]["name"], COIN_SET])
-	if placed == set_count * NUMBERS_PER_SET:
-		finished = true
+	if done != shelf_done[g]:
+		shelf_done[g] = done
+		var bm: StandardMaterial3D = board_mats[g]
+		bm.albedo_color = BOARD_DONE if done else BOARD_COLOR
+		var hm: StandardMaterial3D = header_mats[g]
+		hm.emission_enabled = done
+		for k in NUMBERS_PER_SET:
+			_refresh_ring(g, k)
+		if done:
+			if not set_bonus_paid[g]:
+				set_bonus_paid[g] = true
+				coins += COIN_SET
+				_say("%s vitrini tamam! +%d" % [SETS[g]["name"], COIN_SET])
+			else:
+				_say("%s vitrini yine tamam!" % SETS[g]["name"])
+	_update_title(g)
+	finished = not shelf_done.has(false)
 
 
 func _use_copy() -> void:
@@ -784,8 +859,7 @@ func _use_copy() -> void:
 	var keep: Array = []
 	var cnt := 0
 	for i in hand:
-		var t: Dictionary = tasos[i]
-		if slots[t["grp"]][t["num"] - 1] != -1:
+		if _is_copy(i):
 			copies += 1
 			cnt += 1
 			coins += COIN_COPY
@@ -794,11 +868,10 @@ func _use_copy() -> void:
 	hand = keep
 	if cnt > 0:
 		_say("+%d kopya kutuya gitti" % cnt)
-	elif not keep.is_empty():
-		_say("Elindekilerin vitrinde yeri boş, kopya değil!")
+	else:
+		_say("Elindekilerin aynısı henüz doğru yerinde değil, kopya sayılmaz")
 	sel = clampi(sel, 0, maxi(hand.size() - 1, 0))
 	_rebuild_hand()
-
 
 ## only_selected: Q yalnızca seçili tasoyu, sağ tık hepsini bırakır.
 func _drop(only_selected: bool) -> void:
@@ -905,7 +978,7 @@ func _build_hud() -> void:
 	hud_hand = _mk_label(layer, Vector2(20, 50), 18, Color(1, 1, 1, 0.9))
 	hud_skills = _mk_label(layer, Vector2(20, 760), 17, Color(1, 1, 1, 0.9))
 	var help := _mk_label(layer, Vector2(1040, 14), 14, Color(1, 1, 1, 0.6))
-	help.text = "WASD yürü  •  Shift koş  •  Boşluk zıpla  •  Fare bak\nSol tık: taso al / vitrine yerleştir / kopya kutusuna at\nTekerlek: eldeki tasoyu seç\nQ: seçiliyi bırak  •  Sağ tık: hepsini bırak\n1-4: yetenek satın al  •  R: yeniden  •  Esc: fareyi bırak"
+	help.text = "WASD yürü  •  Shift koş  •  Boşluk zıpla  •  Fare bak\nSol tık: taso al / yuvaya koy / dolu yuvadan geri al veya değiştir\nTekerlek: eldeki tasoyu seç\nQ: seçiliyi bırak  •  Sağ tık: hepsini bırak\n1-4: yetenek satın al  •  R: yeniden  •  Esc: fareyi bırak"
 
 
 func _taso_name(i: int) -> String:
@@ -916,7 +989,7 @@ func _taso_name(i: int) -> String:
 func _update_hud() -> void:
 	var total := set_count * NUMBERS_PER_SET
 	var s := int(elapsed)
-	hud_stats.text = "Jeton: %d      Vitrinde: %d/%d      Yerde: %d      Kopya: %d      Süre: %02d:%02d" % [coins, placed, total, pile_count, copies, floori(s / 60.0), s % 60]
+	hud_stats.text = "Jeton: %d      Doğru: %d/%d      Vitrinde: %d      Yerde: %d      Kopya: %d      Süre: %02d:%02d" % [coins, correct, total, placed, pile_count, copies, floori(s / 60.0), s % 60]
 
 	if hand.is_empty():
 		hud_hand.text = "Elde (0/%d)" % _cap()
@@ -942,7 +1015,9 @@ func _update_hud() -> void:
 			var g: int = body.get_meta("grp")
 			var shelf: Node3D = shelves[g]
 			var n := _nearest_slot(shelf.to_local(target["point"]))
-			var slot_txt := "" if n == -1 else ("   yuva %d %s" % [n + 1, "(boş)" if slots[g][n] == -1 else "(dolu)"])
+			var slot_txt := ""
+			if n != -1:
+				slot_txt = "   boş yuva" if slots[g][n] == -1 else "   " + _taso_name(slots[g][n])
 			hud_info.text = "%s vitrini%s" % [SETS[g]["name"], slot_txt]
 		"copy":
 			hud_info.text = "Kopya Kutusu  (+%d jeton/adet)" % COIN_COPY

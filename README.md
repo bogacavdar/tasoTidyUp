@@ -6,12 +6,15 @@ Godot ile yapılan bir "kaostan düzene" toplu dizme oyunu. Oyuncu birinci şah�
 
 - 40×30 m'lik depo. 6 kaotik yığın ve yere saçılmış tasolar, toplam 5000 taso.
 - 12 set × 60 numara (720 benzersiz taso), yaklaşık %4'ü holo.
-- Her setin duvarda bir vitrini var (10 × 6 numaralı yuva). Toplam 12 vitrin.
+- Her setin duvarda bir vitrini var (10 × 6 yuva), toplam 12 vitrin. Yuvalarda numara yazmıyor. Her taso her yuvaya konabilir, sırayı oyuncu kendisi kuruyor (soldan sağa, yukarıdan aşağı 1-60).
+- Yanlış yerdeki taso kırmızı halkayla gösteriliyor. Tamamen doğru dizilen vitrin yeşile dönüyor.
+- Dolu yuvaya tıklayınca taso geri alınıyor ya da elindeki seçili tasoyla yer değiştiriyor.
+- Jeton sadece bir taso doğru yere ilk kez oturduğunda veriliyor.
 - Taso yüzlerinde set kodu ve numara var (shader + çalışma anında üretilen doku atlası). Holo tasolar gökkuşağı gibi parlıyor.
 - Elde birden fazla taso tutulabiliyor (başta 10, Avuç ile 40). Fare tekerleğiyle seçim yapılıyor.
 - Zıplama, Shift ile hızlı koşu.
 - Yığınlar MultiMesh ile çiziliyor, bakılan taso uzamsal ızgarayla bulunuyor.
-- 4 yetenek: Renk Gözü, Otomatik Numara, Avuç (3 seviye), Holo Dedektörü.
+- 4 yetenek: Renk Gözü, Otomatik Dizme, Avuç (3 seviye), Holo Dedektörü.
 
 ### Tarayıcıda oyna
 
@@ -26,7 +29,7 @@ Her `main` push'unda GitHub Actions web build alıp GitHub Pages'e yayınlar: ht
 ### Kontroller
 
 - **WASD:** yürü, **Shift:** koş, **Boşluk:** zıpla, **fare:** bak
-- **Sol tık:** yığından taso al / seçili tasoyu vitrindeki yuvaya yerleştir / kopyaları Kopya Kutusu'na at
+- **Sol tık:** yığından taso al / seçili tasoyu boş yuvaya koy / dolu yuvadan geri al ya da seçiliyle değiştir / kopyaları Kopya Kutusu'na at
 - **Fare tekerleği:** eldeki tasolar arasında seçim yap
 - **Q:** seçili tasoyu bırak, **sağ tık:** elindekilerin hepsini bırak
 - **1-4:** yetenek satın al
