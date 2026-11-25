@@ -17,14 +17,24 @@ const REACH := 3.6
 const GRAB_RADIUS := 0.4
 const CELL := 1.0              # uzamsal ızgara hücre boyu
 
-const ROOM_W := 60.0           # x
+const ROOM_W := 70.0           # x
 const ROOM_D := 50.0           # z
-const WALL_H := 7.0
+const BUILD_H := 11.0          # bina iç yüksekliği
+const DOOR_W := 4.0
+const DOOR_H := 3.6
+const MEZZ_Y := 5.4            # asma kat zemin yüksekliği
+const MEZZ_EDGE_Z := -10.0     # asma kat z=-25 ile bu değer arasında
+const MEZZ_SHARE := 0.2        # tasoların asma kata saçılan oranı
+const SPIRAL_C := Vector2(0.0, -7.0)   # spiral merdiven merkezi (x, z)
+const SPIRAL_R := 2.3          # dış yarıçap
+const STAND_X := [-15.0, -5.0, 5.0, 15.0]
+const STAND_Z := 8.0
+const COLUMN_X := [-28.0, -20.0, -12.0, -5.0, 5.0, 12.0, 20.0, 28.0]
 
 const SLOT_COLS := 10
 const SLOT_ROWS := 15
-const SLOT_GAP := 0.28
-const BOARD_Y := 2.46          # vitrin panosunun orta yüksekliği (en alt sıra ~0.5 m)
+const SLOT_GAP := 0.25
+const BOARD_Y := 2.45          # vitrin panosunun orta yüksekliği (en alt sıra 0.7 m)
 
 const WALK_SPEED := 4.5
 const SPRINT_MULT := 2.0
@@ -58,11 +68,11 @@ const PALETTE := [
 	"88b04b", "92a8d1", "955251", "b565a7", "009b77", "dd4124", "45b8ac", "efc050",
 	"5b3a29", "1e5945",
 ]  # 34 set için birbirinden belirgin ayrışan renkler
-const RING_EMPTY := Color("1c1917")
+const RING_EMPTY := Color("efe3c8")   # boş yuva: krem
 const RING_WRONG := Color("ff2a2a")
 const RING_DONE := Color("3fe06a")
-const BOARD_COLOR := Color("2b2623")
-const BOARD_DONE := Color("27502f")
+const BOARD_COLOR := Color("3a281b")  # koyu ahşap pano
+const BOARD_DONE := Color("2f6b3a")
 
 const SKILL_ORDER := ["oto", "avuc", "holo"]
 const AVUC_GRAB := [1, 3, 6, 12]
@@ -112,6 +122,11 @@ var atlas_rows := 5
 var shelves: Array = []
 var shelf_titles: Array = []
 var ring_mm: MultiMesh
+var lip_mm: MultiMesh
+var hover_ring: MeshInstance3D
+var glass_mat: StandardMaterial3D
+var led_mat: StandardMaterial3D
+var sky_mat: StandardMaterial3D
 var board_mats: Array = []
 var header_mats: Array = []
 var shelf_done: Array[bool] = []
@@ -139,6 +154,7 @@ func _ready() -> void:
 	_make_set_colors()
 	_build_atlas()
 	_make_taso_material()
+	_make_env_materials()
 	_build_world()
 	_build_player()
 	_spawn_tasos()
@@ -223,6 +239,20 @@ func _make_taso_material() -> void:
 	taso_mat.set_shader_parameter("radius", TASO_R)
 
 
+func _make_env_materials() -> void:
+	glass_mat = StandardMaterial3D.new()
+	glass_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	glass_mat.albedo_color = Color(0.85, 0.95, 1.0, 0.1)
+	glass_mat.roughness = 0.05
+	glass_mat.metallic = 0.3
+	led_mat = StandardMaterial3D.new()
+	led_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	led_mat.albedo_color = Color("fff3d6")
+	sky_mat = StandardMaterial3D.new()
+	sky_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	sky_mat.albedo_color = Color("cfe9ff")
+
+
 func _new_mm(count: int) -> MultiMesh:
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
@@ -260,62 +290,179 @@ func _box(parent: Node, size: Vector3, pos: Vector3, col: Color, kind: String) -
 	return body
 
 
+func _mesh_box(parent: Node, size: Vector3, pos: Vector3, m: Material) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = size
+	mi.mesh = bm
+	mi.material_override = m
+	mi.position = pos
+	parent.add_child(mi)
+	return mi
+
+
+func _cyl(parent: Node, r: float, h: float, pos: Vector3, col: Color, collide: bool) -> Node3D:
+	var cm := CylinderMesh.new()
+	cm.top_radius = r
+	cm.bottom_radius = r
+	cm.height = h
+	cm.radial_segments = 16
+	var mi := MeshInstance3D.new()
+	mi.mesh = cm
+	mi.material_override = _mat(col)
+	if not collide:
+		mi.position = pos
+		parent.add_child(mi)
+		return mi
+	var body := StaticBody3D.new()
+	body.position = pos
+	body.set_meta("kind", "wall")
+	body.add_child(mi)
+	var cs := CollisionShape3D.new()
+	var sh := CylinderShape3D.new()
+	sh.radius = r
+	sh.height = h
+	cs.shape = sh
+	body.add_child(cs)
+	parent.add_child(body)
+	return body
+
+
 func _build_world() -> void:
+	var hw := ROOM_W / 2.0
+	var hd := ROOM_D / 2.0
+
 	var we := WorldEnvironment.new()
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color("1d1a18")
+	env.background_color = Color("a9cfee")
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.9, 0.85, 0.8)
-	env.ambient_light_energy = 0.75
+	env.ambient_light_color = Color(1.0, 0.95, 0.88)
+	env.ambient_light_energy = 0.7
 	we.environment = env
 	add_child(we)
-
 	var sun := DirectionalLight3D.new()
-	sun.rotation_degrees = Vector3(-60, 30, 0)
-	sun.light_energy = 0.8
+	sun.rotation_degrees = Vector3(-55, 25, 0)
+	sun.light_energy = 0.55
 	add_child(sun)
-	for x in [-18.0, 0.0, 18.0]:
-		for z in [-11.0, 11.0]:
-			var lamp := OmniLight3D.new()
-			lamp.position = Vector3(x, WALL_H - 0.6, z)
-			lamp.omni_range = 24.0
-			lamp.light_energy = 1.4
-			lamp.light_color = Color(1, 0.92, 0.8)
-			add_child(lamp)
+	var lamp_spots := [
+		[Vector3(-20, BUILD_H - 0.8, 8), 24.0], [Vector3(0, BUILD_H - 0.8, 8), 24.0], [Vector3(20, BUILD_H - 0.8, 8), 24.0],
+		[Vector3(-20, MEZZ_Y - 0.6, -17), 13.0], [Vector3(20, MEZZ_Y - 0.6, -17), 13.0],
+		[Vector3(-18, BUILD_H - 0.6, -17), 14.0], [Vector3(18, BUILD_H - 0.6, -17), 14.0],
+	]
+	for ls in lamp_spots:
+		var lamp := OmniLight3D.new()
+		lamp.position = ls[0]
+		lamp.omni_range = ls[1]
+		lamp.light_energy = 1.3
+		lamp.light_color = Color(1, 0.93, 0.82)
+		add_child(lamp)
 
-	var hw := ROOM_W / 2.0
-	var hd := ROOM_D / 2.0
-	_box(self, Vector3(ROOM_W + 0.6, 0.2, ROOM_D + 0.6), Vector3(0, -0.1, 0), Color("4a3a2e"), "floor")
-	var wall := Color("5d5249")
-	_box(self, Vector3(ROOM_W + 0.6, WALL_H, 0.3), Vector3(0, WALL_H / 2, -hd - 0.15), wall, "wall")
-	_box(self, Vector3(ROOM_W + 0.6, WALL_H, 0.3), Vector3(0, WALL_H / 2, hd + 0.15), wall, "wall")
-	_box(self, Vector3(0.3, WALL_H, ROOM_D + 0.6), Vector3(-hw - 0.15, WALL_H / 2, 0), wall, "wall")
-	_box(self, Vector3(0.3, WALL_H, ROOM_D + 0.6), Vector3(hw + 0.15, WALL_H / 2, 0), wall, "wall")
+	# --- Zemin, dış kaldırım, tavan ---
+	var floor_col := Color("7a5a3c")
+	_box(self, Vector3(ROOM_W + 0.6, 0.2, ROOM_D + 0.6), Vector3(0, -0.1, 0), floor_col, "floor")
+	_box(self, Vector3(ROOM_W + 30, 0.2, 24), Vector3(0, -0.12, hd + 12.3), Color("8d8d8d"), "floor")
+	_box(self, Vector3(ROOM_W + 30, 0.2, 14), Vector3(0, -0.13, hd + 31), Color("3b3b3b"), "floor")
+	_box(self, Vector3(ROOM_W + 0.6, 0.3, ROOM_D + 0.6), Vector3(0, BUILD_H + 0.15, 0), Color("e9e1d3"), "wall")
 
-	# 34 vitrin: kuzey 10, güney 10, doğu 8, batı 8 yer var; ilk set_count kadarı kullanılır
-	var placements: Array = []
-	for k in 10:
-		placements.append([Vector3(-24.75 + 5.5 * k, 0, -hd + 0.05), 0.0])
-	for k in 10:
-		placements.append([Vector3(-24.75 + 5.5 * k, 0, hd - 0.05), PI])
-	for k in 8:
-		placements.append([Vector3(hw - 0.05, 0, -19.25 + 5.5 * k), -PI / 2])
-	for k in 8:
-		placements.append([Vector3(-hw + 0.05, 0, -19.25 + 5.5 * k), PI / 2])
+	# --- Duvarlar (ön duvarda kapı boşluğu) ---
+	var wall := Color("d9c9ae")
+	_box(self, Vector3(ROOM_W + 0.6, BUILD_H, 0.3), Vector3(0, BUILD_H / 2, -hd - 0.15), wall, "wall")
+	_box(self, Vector3(0.3, BUILD_H, ROOM_D + 0.6), Vector3(-hw - 0.15, BUILD_H / 2, 0), wall, "wall")
+	_box(self, Vector3(0.3, BUILD_H, ROOM_D + 0.6), Vector3(hw + 0.15, BUILD_H / 2, 0), wall, "wall")
+	var seg_w := hw - DOOR_W / 2.0
+	for sx in [-1.0, 1.0]:
+		_box(self, Vector3(seg_w, BUILD_H, 0.3), Vector3(sx * (DOOR_W / 2.0 + seg_w / 2.0), BUILD_H / 2, hd + 0.15), wall, "wall")
+	_box(self, Vector3(DOOR_W, BUILD_H - DOOR_H, 0.3), Vector3(0, DOOR_H + (BUILD_H - DOOR_H) / 2, hd + 0.15), wall, "wall")
+	# süpürgelik
+	var trim := _mat(Color("5a3d28"))
+	_mesh_box(self, Vector3(ROOM_W, 0.15, 0.04), Vector3(0, 0.075, -hd + 0.02), trim)
+	_mesh_box(self, Vector3(0.04, 0.15, ROOM_D), Vector3(-hw + 0.02, 0.075, 0), trim)
+	_mesh_box(self, Vector3(0.04, 0.15, ROOM_D), Vector3(hw - 0.02, 0.075, 0), trim)
 
-	var board_w := SLOT_COLS * SLOT_GAP + 0.3
-	var board_h := SLOT_ROWS * SLOT_GAP + 0.4
+	# --- Kapı: çerçeve, açık cam kanatlar, tabela ---
+	var frame_col := Color("3b2a1d")
+	for sx in [-1.0, 1.0]:
+		_box(self, Vector3(0.2, DOOR_H, 0.45), Vector3(sx * (DOOR_W / 2.0 + 0.1), DOOR_H / 2, hd + 0.15), frame_col, "wall")
+		var leaf := Node3D.new()
+		leaf.position = Vector3(sx * DOOR_W / 2.0, 0, hd + 0.2)
+		leaf.rotation.y = sx * 1.3
+		add_child(leaf)
+		_mesh_box(leaf, Vector3(DOOR_W / 2.0 - 0.1, DOOR_H - 0.15, 0.05), Vector3(-sx * (DOOR_W / 4.0), DOOR_H / 2, 0), glass_mat)
+		_mesh_box(leaf, Vector3(0.06, DOOR_H - 0.15, 0.07), Vector3(-sx * (DOOR_W / 2.0 - 0.1), DOOR_H / 2, 0), _mat(frame_col))
+	_mesh_box(self, Vector3(DOOR_W + 0.6, 0.2, 0.45), Vector3(0, DOOR_H + 0.1, hd + 0.15), _mat(frame_col))
+	for side in [1.0, -1.0]:
+		var sign_z := hd + 0.15 + side * 0.25
+		var board := _mesh_box(self, Vector3(9.0, 1.4, 0.12), Vector3(0, DOOR_H + 1.3, sign_z), _mat(Color("8a1f2b")))
+		board.position.z = sign_z
+		var sl := Label3D.new()
+		sl.text = "TASO DÜKKÂNI"
+		sl.font_size = 96
+		sl.pixel_size = 0.01
+		sl.outline_size = 16
+		sl.modulate = Color("ffe08a")
+		sl.position = Vector3(0, DOOR_H + 1.3, sign_z + side * 0.08)
+		sl.rotation.y = 0.0 if side > 0 else PI
+		add_child(sl)
+	# paspas
+	_mesh_box(self, Vector3(DOOR_W, 0.02, 2.0), Vector3(0, 0.01, hd - 1.2), _mat(Color("4b2b2b")))
+
+	# --- Pencereler (dışarıdan gün ışığı giren camlar) ---
+	for x in [-10.0, 10.0]:
+		_window(Vector3(x, 2.1, hd - 0.03), Vector2(6.0, 3.0), PI)
+	for x in [-22.0, -8.0, 8.0, 22.0]:
+		_window(Vector3(x, 7.8, hd - 0.03), Vector2(4.0, 2.4), PI)
+	for z in [-2.0, 8.0, 18.0]:
+		_window(Vector3(-hw + 0.03, 7.8, z), Vector2(4.0, 2.4), PI / 2)
+		_window(Vector3(hw - 0.03, 7.8, z), Vector2(4.0, 2.4), -PI / 2)
+	for x in [-26.0, -14.0, 14.0, 26.0]:
+		_window(Vector3(x, 2.4, -hd + 0.03), Vector2(5.0, 2.6), 0.0)
+
+	# --- Kasa ---
+	var counter := _box(self, Vector3(3.2, 1.0, 1.0), Vector3(8.5, 0.5, hd - 5.5), Color("6b4a32"), "wall")
+	counter.set_meta("kind", "wall")
+	_mesh_box(self, Vector3(3.3, 0.06, 1.1), Vector3(8.5, 1.03, hd - 5.5), _mat(Color("e8e0d0")))
+	_mesh_box(self, Vector3(0.5, 0.3, 0.4), Vector3(8.0, 1.21, hd - 5.5), _mat(Color("2a2a2a")))
+	var kl := Label3D.new()
+	kl.text = "KASA"
+	kl.font_size = 64
+	kl.pixel_size = 0.006
+	kl.outline_size = 10
+	kl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	kl.position = Vector3(8.5, 2.0, hd - 5.5)
+	add_child(kl)
+
+	# --- Asma kat: döşeme, kolonlar, cam korkuluk, sahanlık ---
+	var mezz_d := MEZZ_EDGE_Z + hd
+	_box(self, Vector3(ROOM_W, 0.3, mezz_d), Vector3(0, MEZZ_Y - 0.15, (-hd + MEZZ_EDGE_Z) / 2.0), floor_col, "floor")
+	_mesh_box(self, Vector3(ROOM_W, 0.32, 0.06), Vector3(0, MEZZ_Y - 0.15, MEZZ_EDGE_Z + 0.03), trim)
+	for x in COLUMN_X:
+		_box(self, Vector3(0.45, MEZZ_Y - 0.3, 0.45), Vector3(x, (MEZZ_Y - 0.3) / 2.0, MEZZ_EDGE_Z - 0.3), Color("cbb89a"), "wall")
+	var rail_glass := glass_mat
+	for sx in [-1.0, 1.0]:
+		var seg_len := hw - 1.2
+		var cx := sx * (1.2 + seg_len / 2.0)
+		var rail := _box(self, Vector3(seg_len, 1.0, 0.05), Vector3(cx, MEZZ_Y + 0.5, MEZZ_EDGE_Z - 0.08), Color("cfe8f0"), "wall")
+		(rail.get_child(0) as MeshInstance3D).material_override = rail_glass
+		_mesh_box(self, Vector3(seg_len, 0.07, 0.1), Vector3(cx, MEZZ_Y + 1.03, MEZZ_EDGE_Z - 0.08), trim)
+	# Sahanlık: merdivenin bittiği yerden asma kat kenarına
+	var land_d := (SPIRAL_C.y - (SPIRAL_R - 0.8) + 0.4) - MEZZ_EDGE_Z
+	_box(self, Vector3(2.4, 0.3, land_d), Vector3(SPIRAL_C.x, MEZZ_Y - 0.15, MEZZ_EDGE_Z + land_d / 2.0), floor_col, "floor")
+
+	_build_spiral()
+
+	# --- Ortak çoklu çizimler: yuva halkaları, raf çıtaları, vitrindeki tasolar ---
+	var total := set_count * NUMBERS_PER_SET
 	var ring_mesh := CylinderMesh.new()
-	ring_mesh.top_radius = TASO_R + 0.028
-	ring_mesh.bottom_radius = TASO_R + 0.028
+	ring_mesh.top_radius = TASO_R + 0.014
+	ring_mesh.bottom_radius = TASO_R + 0.014
 	ring_mesh.height = 0.004
 	ring_mesh.radial_segments = 24
 	ring_mm = MultiMesh.new()
 	ring_mm.transform_format = MultiMesh.TRANSFORM_3D
 	ring_mm.use_colors = true
 	ring_mm.mesh = ring_mesh
-	ring_mm.instance_count = set_count * NUMBERS_PER_SET
+	ring_mm.instance_count = total
 	var ring_mmi := MultiMeshInstance3D.new()
 	ring_mmi.multimesh = ring_mm
 	var ring_mat := StandardMaterial3D.new()
@@ -324,49 +471,182 @@ func _build_world() -> void:
 	ring_mmi.material_override = ring_mat
 	add_child(ring_mmi)
 
-	shelf_mm = _new_mm(set_count * NUMBERS_PER_SET)
+	var lip_mesh := BoxMesh.new()
+	lip_mesh.size = Vector3(SLOT_COLS * SLOT_GAP + 0.2, 0.018, 0.08)
+	lip_mm = MultiMesh.new()
+	lip_mm.transform_format = MultiMesh.TRANSFORM_3D
+	lip_mm.mesh = lip_mesh
+	lip_mm.instance_count = set_count * SLOT_ROWS
+	var lip_mmi := MultiMeshInstance3D.new()
+	lip_mmi.multimesh = lip_mm
+	lip_mmi.material_override = _mat(Color("8a6240"))
+	add_child(lip_mmi)
+
+	shelf_mm = _new_mm(total)
 	var shelf_mmi := MultiMeshInstance3D.new()
 	shelf_mmi.multimesh = shelf_mm
 	shelf_mmi.material_override = taso_mat
 	add_child(shelf_mmi)
 
+	# --- Vitrin yerleşimi ---
+	var placements := _vitrine_placements()
 	for g in set_count:
-		var shelf := Node3D.new()
-		shelf.position = placements[g][0]
-		shelf.rotation.y = placements[g][1]
-		add_child(shelf)
-		shelves.append(shelf)
-		var col := _set_color(g)
-		var board := _box(shelf, Vector3(board_w, board_h, 0.1), Vector3(0, BOARD_Y, 0), Color("2b2623"), "shelf")
-		board.set_meta("grp", g)
-		board_mats.append((board.get_child(0) as MeshInstance3D).material_override)
-		var header := _box(shelf, Vector3(board_w, 0.32, 0.14), Vector3(0, BOARD_Y + board_h / 2 + 0.16, 0.02), col.darkened(0.15), "shelf")
-		header.set_meta("grp", g)
-		var hm: StandardMaterial3D = (header.get_child(0) as MeshInstance3D).material_override
-		hm.emission = Color("3fae5a")
-		header_mats.append(hm)
-		var counter := _box(shelf, Vector3(board_w, 0.3, 0.45), Vector3(0, 0.15, 0.2), Color("3a302a"), "shelf")
-		counter.set_meta("grp", g)
+		var pl: Array = placements[g]
+		_build_vitrine(g, pl[0], pl[1])
 
-		var title := Label3D.new()
-		title.font_size = 64
-		title.pixel_size = 0.003
-		title.outline_size = 12
-		title.position = Vector3(0, BOARD_Y + board_h / 2 + 0.16, 0.1)
-		shelf.add_child(title)
-		shelf_titles.append(title)
+	# Baktığın yuvayı gösteren sarı halka
+	var torus := TorusMesh.new()
+	torus.inner_radius = TASO_R + 0.012
+	torus.outer_radius = TASO_R + 0.04
+	hover_ring = MeshInstance3D.new()
+	hover_ring.mesh = torus
+	var hmat := StandardMaterial3D.new()
+	hmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	hmat.albedo_color = Color("ffe14d")
+	hover_ring.material_override = hmat
+	hover_ring.visible = false
+	add_child(hover_ring)
 
-		var row_slots: Array = []
-		for n in NUMBERS_PER_SET:
-			var sp := _slot_local(n)
-			ring_mm.set_instance_transform(g * NUMBERS_PER_SET + n, shelf.global_transform * Transform3D(Basis(Vector3.RIGHT, PI / 2), sp + Vector3(0, 0, 0.002)))
-			ring_mm.set_instance_color(g * NUMBERS_PER_SET + n, RING_EMPTY)
-			row_slots.append(-1)
-			shelf_mm.set_instance_transform(g * NUMBERS_PER_SET + n, hidden_xf)
-		slots.append(row_slots)
-		shelf_done.append(false)
-		set_bonus_paid.append(false)
-		_update_title(g)
+
+func _window(center: Vector3, size: Vector2, rot: float) -> void:
+	var node := Node3D.new()
+	node.position = center
+	node.rotation.y = rot
+	add_child(node)
+	_mesh_box(node, Vector3(size.x, size.y, 0.02), Vector3.ZERO, sky_mat)
+	var fm := _mat(Color("f2ede4"))
+	var t := 0.1
+	_mesh_box(node, Vector3(size.x + t * 2, t, 0.08), Vector3(0, size.y / 2 + t / 2, 0.03), fm)
+	_mesh_box(node, Vector3(size.x + t * 2, t * 1.5, 0.14), Vector3(0, -size.y / 2 - t * 0.75, 0.05), fm)
+	_mesh_box(node, Vector3(t, size.y, 0.08), Vector3(-size.x / 2 - t / 2, 0, 0.03), fm)
+	_mesh_box(node, Vector3(t, size.y, 0.08), Vector3(size.x / 2 + t / 2, 0, 0.03), fm)
+	_mesh_box(node, Vector3(0.05, size.y, 0.05), Vector3(0, 0, 0.02), fm)
+	_mesh_box(node, Vector3(size.x, 0.05, 0.05), Vector3(0, 0, 0.02), fm)
+
+
+## Spiral merdiven: üstü basamaklı görünen, eğimli parçalardan oluşan helezon rampa
+func _build_spiral() -> void:
+	var c := Vector3(SPIRAL_C.x, 0, SPIRAL_C.y)
+	var turns := 1.5
+	var segs := 72
+	var sweep := TAU * turns
+	var end_ang := -PI / 2.0                     # en üstte kuzeye (asma kata) bakar
+	var start_ang := end_ang - sweep
+	var rise := MEZZ_Y / segs
+	var mid_r := SPIRAL_R - 0.8
+	var step_mat := _mat(Color("6b4a32"))
+	var edge_mat := _mat(Color("d8c9a8"))
+	for k in segs:
+		var a := start_ang + (k + 0.5) * sweep / segs
+		var radial := Vector3(cos(a), 0, sin(a))
+		var tangent := Vector3(-sin(a), 0, cos(a))
+		var arc := mid_r * sweep / segs
+		var zf := (tangent * arc + Vector3.UP * rise).normalized()
+		var yu := zf.cross(radial)
+		var b := Basis(radial, yu, zf)
+		var pos := c + radial * mid_r + Vector3.UP * ((k + 0.5) * rise - 0.06)
+		var body := StaticBody3D.new()
+		body.transform = Transform3D(b, pos)
+		body.set_meta("kind", "floor")
+		var size := Vector3(1.6, 0.12, arc * 1.9)
+		var mi := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = size
+		mi.mesh = bm
+		mi.material_override = step_mat if k % 2 == 0 else edge_mat
+		body.add_child(mi)
+		var cs := CollisionShape3D.new()
+		var sh := BoxShape3D.new()
+		sh.size = size
+		cs.shape = sh
+		body.add_child(cs)
+		add_child(body)
+		if k % 3 == 0:
+			var post_pos := c + radial * (SPIRAL_R - 0.05) + Vector3.UP * ((k + 0.5) * rise + 0.5)
+			_cyl(self, 0.025, 1.0, post_pos, Color("3b2a1d"), false)
+	_cyl(self, 0.22, MEZZ_Y + 1.2, c + Vector3.UP * (MEZZ_Y + 1.2) / 2.0, Color("3b2a1d"), true)
+
+
+## 34 vitrin: [konum, y-dönüşü]. Vitrin yerelde +z'ye bakar.
+func _vitrine_placements() -> Array:
+	var hw := ROOM_W / 2.0 - 0.05
+	var hd := ROOM_D / 2.0 - 0.05
+	var out: Array = []
+	# Zemin kat sol ve sağ duvar: 6'şar
+	for z in [-20.0, -12.5, -5.0, 2.5, 10.0, 17.5]:
+		out.append([Vector3(-hw, 0, z), PI / 2])
+	for z in [-20.0, -12.5, -5.0, 2.5, 10.0, 17.5]:
+		out.append([Vector3(hw, 0, z), -PI / 2])
+	# Orta standlar: çift taraflı, 4 stand x 2 yüz
+	for x in STAND_X:
+		out.append([Vector3(x, 0, STAND_Z + 0.06), 0.0])
+		out.append([Vector3(x, 0, STAND_Z - 0.06), PI])
+	# Ön duvar, kapının iki yanı: 4
+	for x in [-26.0, -18.0, 18.0, 26.0]:
+		out.append([Vector3(x, 0, hd), PI])
+	# Asma kat: arka duvar 8, yan duvarlar 1'er
+	for x in [-28.0, -20.0, -12.0, -4.0, 4.0, 12.0, 20.0, 28.0]:
+		out.append([Vector3(x, MEZZ_Y, -hd), 0.0])
+	out.append([Vector3(-hw, MEZZ_Y, -17.5), PI / 2])
+	out.append([Vector3(hw, MEZZ_Y, -17.5), -PI / 2])
+	return out
+
+
+func _build_vitrine(g: int, pos: Vector3, rot: float) -> void:
+	var shelf := Node3D.new()
+	shelf.position = pos
+	shelf.rotation.y = rot
+	add_child(shelf)
+	shelves.append(shelf)
+	var col := _set_color(g)
+	var w := SLOT_COLS * SLOT_GAP + 0.2
+	var h := SLOT_ROWS * SLOT_GAP + 0.3
+	var depth := 0.42
+	var wood := Color("5a3d28")
+	var top_y := BOARD_Y + h / 2.0
+	var base_top := BOARD_Y - h / 2.0
+
+	var back := _box(shelf, Vector3(w, h, 0.1), Vector3(0, BOARD_Y, 0), BOARD_COLOR, "shelf")
+	back.set_meta("grp", g)
+	board_mats.append((back.get_child(0) as MeshInstance3D).material_override)
+	for sx in [-1.0, 1.0]:
+		var side := _box(shelf, Vector3(0.08, h + 0.12, depth), Vector3(sx * (w / 2.0 + 0.04), BOARD_Y, depth / 2.0 - 0.05), wood, "shelf")
+		side.set_meta("grp", g)
+	var cap := _box(shelf, Vector3(w + 0.16, 0.1, depth + 0.04), Vector3(0, top_y + 0.05, depth / 2.0 - 0.04), wood, "shelf")
+	cap.set_meta("grp", g)
+	var base := _box(shelf, Vector3(w + 0.16, base_top, depth + 0.08), Vector3(0, base_top / 2.0, depth / 2.0 - 0.02), wood.darkened(0.25), "shelf")
+	base.set_meta("grp", g)
+	var header := _box(shelf, Vector3(w + 0.16, 0.26, 0.12), Vector3(0, top_y + 0.23, 0.02), col, "shelf")
+	header.set_meta("grp", g)
+	var hm: StandardMaterial3D = (header.get_child(0) as MeshInstance3D).material_override
+	hm.emission = Color("3fae5a")
+	header_mats.append(hm)
+	_mesh_box(shelf, Vector3(w, 0.025, 0.03), Vector3(0, top_y - 0.03, depth - 0.12), led_mat)
+	_mesh_box(shelf, Vector3(w, h, 0.012), Vector3(0, BOARD_Y, depth - 0.06), glass_mat)
+
+	var title := Label3D.new()
+	title.font_size = 64
+	title.pixel_size = 0.0026
+	title.outline_size = 12
+	title.position = Vector3(0, top_y + 0.23, 0.09)
+	shelf.add_child(title)
+	shelf_titles.append(title)
+
+	for r in SLOT_ROWS:
+		var ry := BOARD_Y + ((SLOT_ROWS - 1) / 2.0 - r) * SLOT_GAP
+		lip_mm.set_instance_transform(g * SLOT_ROWS + r, shelf.global_transform * Transform3D(Basis(), Vector3(0, ry - TASO_R - 0.012, 0.09)))
+
+	var row_slots: Array = []
+	for n in NUMBERS_PER_SET:
+		var sp := _slot_local(n)
+		ring_mm.set_instance_transform(g * NUMBERS_PER_SET + n, shelf.global_transform * Transform3D(Basis(Vector3.RIGHT, PI / 2), sp + Vector3(0, 0, 0.002)))
+		ring_mm.set_instance_color(g * NUMBERS_PER_SET + n, RING_EMPTY)
+		row_slots.append(-1)
+		shelf_mm.set_instance_transform(g * NUMBERS_PER_SET + n, hidden_xf)
+	slots.append(row_slots)
+	shelf_done.append(false)
+	set_bonus_paid.append(false)
+	_update_title(g)
 
 
 func _slot_local(n: int) -> Vector3:
@@ -397,7 +677,7 @@ func _update_title(g: int) -> void:
 
 func _build_player() -> void:
 	player = CharacterBody3D.new()
-	player.position = Vector3(0, 0.95, 19)
+	player.position = Vector3(0, 0.95, ROOM_D / 2.0 - 3.0)
 	var cs := CollisionShape3D.new()
 	var cap := CapsuleShape3D.new()
 	cap.radius = 0.35
@@ -436,16 +716,45 @@ func _spawn_tasos() -> void:
 		tasos.append({"grp": p.x, "num": p.y, "holo": holo})
 		if holo:
 			holo_list.append(i)
-		# Tüm zemine tamamen rastgele saçılır; üst üste binenler çakışmasın diye hafif yükseklik farkı
-		var hw := ROOM_W / 2.0 - WALL_MARGIN
-		var hd := ROOM_D / 2.0 - WALL_MARGIN
-		var pos := Vector3(randf_range(-hw, hw), BASE_Y + randf() * 0.04, randf_range(-hd, hd))
+		# İki katın zeminine tamamen rastgele saçılır; çakışmasın diye hafif yükseklik farkı
+		var pos := _random_floor_pos()
 		var b := Basis(Vector3.UP, randf() * TAU) * Basis(Vector3.RIGHT, randf_range(-0.12, 0.12))
 		pile_xf.append(Transform3D(b, pos))
 		in_pile.append(true)
 		paid.append(false)
 		_grid_add(i)
 	pile_count = tasos.size()
+
+
+func _random_floor_pos() -> Vector3:
+	var hw := ROOM_W / 2.0 - WALL_MARGIN
+	var hd := ROOM_D / 2.0 - WALL_MARGIN
+	for attempt in 40:
+		var jitter := randf() * 0.04
+		if randf() < MEZZ_SHARE:
+			return Vector3(randf_range(-hw, hw), MEZZ_Y + BASE_Y + jitter, randf_range(-hd, MEZZ_EDGE_Z - 0.6))
+		var p := Vector3(randf_range(-hw, hw), BASE_Y + jitter, randf_range(-hd, hd))
+		if _floor_blocked(p):
+			continue
+		return p
+	return Vector3(randf_range(-10, 10), BASE_Y, 15.0)
+
+
+## Zemin katta taso saçılmayacak yerler: merdiven, standlar, kolonlar, kapı önü, kasa
+func _floor_blocked(p: Vector3) -> bool:
+	if Vector2(p.x, p.z).distance_to(SPIRAL_C) < SPIRAL_R + 0.6:
+		return true
+	for sx in STAND_X:
+		if absf(p.x - sx) < 2.2 and absf(p.z - STAND_Z) < 1.3:
+			return true
+	for cx in COLUMN_X:
+		if absf(p.x - cx) < 0.6 and absf(p.z - (MEZZ_EDGE_Z - 0.3)) < 0.6:
+			return true
+	if absf(p.x) < 3.0 and p.z > ROOM_D / 2.0 - 4.0:
+		return true
+	if absf(p.x - 8.5) < 2.2 and absf(p.z - (ROOM_D / 2.0 - 5.5)) < 1.2:
+		return true
+	return false
 
 
 func _build_pile() -> void:
@@ -568,8 +877,25 @@ func _physics_process(delta: float) -> void:
 	else:
 		player.velocity.y -= GRAVITY * delta
 	player.move_and_slide()
+	if player.global_position.y < -5.0:
+		player.global_position = Vector3(0, 1.0, ROOM_D / 2.0 - 3.0)
 	cam.fov = lerpf(cam.fov, 82.0 if (sprint and mv != Vector2.ZERO) else 75.0, 8.0 * delta)
 	target = _find_target()
+	_update_hover()
+
+
+func _update_hover() -> void:
+	hover_ring.visible = false
+	if target.get("kind", "") != "shelf":
+		return
+	var body: Node = target["body"]
+	var g: int = body.get_meta("grp")
+	var shelf: Node3D = shelves[g]
+	var n := _nearest_slot(shelf.to_local(target["point"]))
+	if n == -1:
+		return
+	hover_ring.global_transform = shelf.global_transform * Transform3D(Basis(Vector3.RIGHT, PI / 2), _slot_local(n) + Vector3(0, 0, 0.03))
+	hover_ring.visible = true
 
 
 func _process(delta: float) -> void:
@@ -828,7 +1154,7 @@ func _drop(only_selected: bool) -> void:
 		return
 	var list: Array = [hand[sel]] if only_selected else hand.duplicate()
 	var pt := player.global_position - player.global_transform.basis.z * 1.0
-	pt.y = 0.0
+	pt.y = player.global_position.y - 0.95
 	var kind: String = target.get("kind", "")
 	if kind == "taso" or kind == "floor":
 		pt = target["point"]

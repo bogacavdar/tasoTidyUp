@@ -2,21 +2,25 @@
 
 Godot ile yapılan bir "kaostan düzene" toplu dizme oyunu. Oyuncu birinci şahıs bakışla, yere yığılmış binlerce tasoyu setlerine ve numaralarına göre vitrinlere diziyor, kazandığı jetonlarla yetenek açıyor ve hızlanıyor.
 
-## Şu anki durum: Aşama 2, dev depo ve 5100 benzersiz taso
+## Şu anki durum: Taso dükkânı
 
-- 60×50 m'lik depo. Bütün tasolar zemine tamamen rastgele saçılmış.
-- **5100 benzersiz taso:** 34 set × 150 numara, kopya yok. Yaklaşık %4'ü holo.
-- Her setin duvarda bir vitrini var (10 sütun × 15 satır), toplam 34 vitrin.
-- Yuvalarda numara yazmıyor. Her taso her yuvaya konabilir, sırayı oyuncu kurar (soldan sağa, yukarıdan aşağı 1-150).
-- Yanlış yerdeki taso kırmızı halkayla gösterilir. Tamamen doğru dizilen vitrin yeşile döner.
-- Dolu yuvaya tıklayınca taso geri alınır ya da elindeki seçili tasoyla yer değiştirir.
-- Doğru yere oturan taso çan sesi çıkarır (holo ve tamamlanan vitrin için ayrı sesler, kodda sentezleniyor).
-- Jeton sadece bir taso doğru yere ilk kez oturduğunda verilir.
-- Taso yüzlerinde set kodu ve numara var. Shader bunları küçük bir rakam/kod atlasından anında oluşturur. Holo tasolar gökkuşağı gibi parlar.
-- Elde birden fazla taso tutulabilir (başta 10, Avuç ile 40). Fare tekerleğiyle seçim yapılır.
-- Zıplama, Shift ile hızlı koşu.
-- Her setin kendine ait belirgin bir rengi var (34 renk).
-- 3 yetenek: Otomatik Dizme, Avuç (3 seviye), Holo Dedektörü.
+- **Bina:** 70×50 m'lik bir taso dükkânı.
+  - Ön duvarda açık cam kapı, "TASO DÜKKÂNI" tabelası, dışarıda kaldırım.
+  - Vitrin camları ve pencereler, kapının yanında bir kasa.
+  - Spiral merdivenle çıkılan, cam korkuluklu bir asma kat.
+- **34 adet 3D vitrin:**
+  - Sol ve sağ duvarlarda 6'şar, ortada 4 çift taraflı stand (8), ön duvarda 4, asma katta 10.
+  - Her vitrinde yan panolar, üst kapak, alt dolap, her sırada raf çıtası, cam ön yüz, LED şerit ve set renginde başlık var.
+  - 10 sütun × 15 satır yuva.
+- **5100 benzersiz taso:** 34 set × 150 numara, her setin kendine ait belirgin bir rengi var. İki katın zeminine rastgele saçılmış.
+- **Yuvalar:** Koyu ahşap panoda krem halkalar. Baktığın yuvanın etrafında sarı bir halka çıkar.
+- **Dizme:** Her taso her yuvaya konabilir, sırayı oyuncu kurar. Doğru sıra soldan sağa, yukarıdan aşağı 1-150.
+  - Yanlış yerdeki taso kırmızı halkayla gösterilir.
+  - Tamamen doğru dizilen vitrin yeşile döner.
+  - Doğru yere oturan taso çan sesi çıkarır.
+- **Jeton:** Sadece bir taso doğru yere ilk kez oturduğunda verilir.
+- **Taşıma:** Elde birden fazla taso tutulabilir, fare tekerleğiyle seçilir. Zıplama ve Shift ile koşu var.
+- **3 yetenek:** Otomatik Dizme, Avuç, Holo Dedektörü.
 
 ### Tarayıcıda oyna
 
