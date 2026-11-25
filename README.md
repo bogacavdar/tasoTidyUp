@@ -11,7 +11,11 @@ Bu sürümün tek amacı şu soruya cevap bulmak: **Binlerce tasoyu dizmek eğle
 - Kopya Kutusu, tamamlanan albüm bonusu
 - 4 yetenek: Renk Gözü, Otomatik Numara, Avuç (3 seviye), Holo Dedektörü
 
-### Çalıştırma
+### Tarayıcıda oyna
+
+Her `main` push'unda GitHub Actions web build alıp GitHub Pages'e yayınlar: https://bogacavdar.github.io/tasoTidyUp/
+
+### Godot ile çalıştırma
 
 1. Godot 4.3 veya üstünü aç.
 2. **Import** ile bu klasördeki `project.godot` dosyasını seç.
