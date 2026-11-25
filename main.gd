@@ -90,13 +90,22 @@ const RING_DONE := Color("3fe06a")
 const BOARD_COLOR := Color("3a281b")  # koyu ahşap pano
 const BOARD_DONE := Color("2f6b3a")
 
-const SKILL_ORDER := ["oto", "avuc", "holo"]
 const AVUC_GRAB := [1, 3, 6, 12]
-const AVUC_CAP := [10, 15, 25, 40]
+const KAPASITE := [10, 15, 25, 40, 60]
+const HIZ := [1.0, 1.15, 1.3, 1.5]
+const SEZGI_SURE := [0.0, 8.0, 14.0, 20.0]
+const TOPLAMA_R := [0.0, 4.0, 7.0, 12.0]
+const AYIKLAMA_R := [0.0, 4.0, 8.0]
+const CD_SEZGI := 30.0
+const CD_TOPLAMA := 40.0
+const CD_AYIKLAMA := 60.0
+const ABILITY_KEYS := {"sezgi": "Z", "toplama": "F", "ayiklama": "G", "son": "X"}
 
-const COIN_PLACE := 2
-const COIN_HOLO := 10
-const COIN_SET := 200
+# Puan: doğru yere ilk kez oturan taso, tamamlanan tür (3 evrim) ve vitrin
+const COIN_PLACE := 1
+const COIN_HOLO := 3
+const COIN_SPECIES := 2
+const COIN_SET := 25
 
 # ---------------- Durum ----------------
 var set_count := SETS.size()
@@ -111,7 +120,16 @@ var hand: Array = []
 var sel := 0                          # eldeki seçili taso
 var holo_list: Array[int] = []
 var skills := {}
-var coins := 0
+var coins := 0                        # puan
+var species_paid: Array[bool] = []
+var cooldowns := {"sezgi": 0.0, "toplama": 0.0, "ayiklama": 0.0}
+var sezgi_time := 0.0
+var sezgi_grp := -1
+var son_used := false
+var glow_mm: MultiMesh
+var glow_mmi: MultiMeshInstance3D
+var compass_ring: MeshInstance3D
+var compass_beam: MeshInstance3D
 var placed := 0                       # vitrinlerdeki taso sayısı
 var correct := 0                      # doğru yerdeki taso sayısı
 var elapsed := 0.0
@@ -182,6 +200,7 @@ var look_travel := 0.0
 var touch_jump := false
 var touch_sprint := false
 var joy_base: Panel
+var touch_ability_btns := {}
 var joy_knob: Panel
 
 # Kayıt ve menü
@@ -196,6 +215,9 @@ var started := false
 var menu_layer: CanvasLayer
 var menu_main: Control
 var menu_settings: Control
+var menu_tree: Control
+var tree_points: Label
+var tree_buttons := {}
 var menu_stats: Label
 var btn_continue: Button
 var btn_new: Button
@@ -223,10 +245,13 @@ func _ready() -> void:
 	_build_world()
 	_build_player()
 	var data := _read_save()
+	for k in set_count * (NUMBERS_PER_SET / 3):
+		species_paid.append(false)
 	_spawn_tasos(data)
 	_build_pile()
 	_build_hud()
 	_build_sounds()
+	_build_ability_visuals()
 	if not data.is_empty():
 		_apply_save(data)
 		_say("Kaldığın yerden devam ediyorsun")
@@ -240,12 +265,37 @@ func _ready() -> void:
 		_open_menu()
 
 
+## Gelişim ağacı: dal 0 taşıma/hareket, 1 görüş, 2 büyüler. req: önce açılması gereken düğüm.
+const TREE_ORDER := ["kapasite", "avuc", "hiz", "sezgi", "pusula", "holo", "toplama", "oto", "ayiklama", "son"]
+
+
 func _init_skills() -> void:
 	skills = {
-		"oto": {"name": "Otomatik Dizme", "desc": "vitrine tıklayınca elindeki o setin tasoları doğru boş yuvalarına gider", "cost": [60], "level": 0},
-		"avuc": {"name": "Avuç", "desc": "tek tıkla 3/6/12 taso al, el kapasitesi 15/25/40", "cost": [40, 150, 400], "level": 0},
-		"holo": {"name": "Holo Dedektörü", "desc": "gömülü holo tasolar yığının içinden parlar", "cost": [120], "level": 0},
+		"kapasite": {"name": "El Kapasitesi", "branch": 0, "req": "", "cost": [20, 60, 150, 350], "level": 0,
+			"desc": "Elinde taşıyabildiğin taso: 10 → 15 / 25 / 40 / 60"},
+		"avuc": {"name": "Avuç", "branch": 0, "req": "kapasite", "cost": [40, 120, 300], "level": 0,
+			"desc": "Tek tıkla yakındaki 3 / 6 / 12 tasoyu al"},
+		"hiz": {"name": "Hız", "branch": 0, "req": "", "cost": [30, 90, 220], "level": 0,
+			"desc": "Yürüme ve koşma +%15 / +%30 / +%50"},
+		"sezgi": {"name": "Sezgi [Z]", "branch": 1, "req": "", "cost": [25, 80, 200], "level": 0,
+			"desc": "Seçili tasonun setini yerde parlatır: 8 / 14 / 20 sn (30 sn bekleme)"},
+		"pusula": {"name": "Vitrin Pusulası", "branch": 1, "req": "sezgi", "cost": [60], "level": 0,
+			"desc": "Seçili tasonun vitrinini ve doğru yuvasını gösterir"},
+		"holo": {"name": "Holo Dedektörü", "branch": 1, "req": "sezgi", "cost": [80], "level": 0,
+			"desc": "Holo tasolar her yerden parlar"},
+		"toplama": {"name": "Toplama [F]", "branch": 2, "req": "sezgi", "cost": [120, 250, 500], "level": 0,
+			"desc": "Seçili tasonun setinden 4 / 7 / 12 m içindekileri önüne çeker (40 sn bekleme)"},
+		"oto": {"name": "Otomatik Dizme", "branch": 2, "req": "pusula", "cost": [200], "level": 0,
+			"desc": "Vitrine tıklayınca elindeki o setin tasoları doğru yuvalarına gider"},
+		"ayiklama": {"name": "Ayıklama [G]", "branch": 2, "req": "toplama", "cost": [250, 600], "level": 0,
+			"desc": "Çevrendeki 4 / 8 m içindeki tasoları setlerine göre yığınlara ayırır (60 sn)"},
+		"son": {"name": "Son Dokunuş [X]", "branch": 2, "req": "oto", "cost": [100], "level": 0,
+			"desc": "En fazla 10 taso kaldığında hepsini doğru yerine koyar (bir kez)"},
 	}
+
+
+func _lvl(key: String) -> int:
+	return int(skills[key]["level"])
 
 
 func _uid(t: Dictionary) -> int:
@@ -916,7 +966,7 @@ func _build_player() -> void:
 	hand_root.position = Vector3(0.3, -0.28, -0.55)
 	hand_root.rotation = Vector3(1.15, -0.25, 0)
 	cam.add_child(hand_root)
-	hand_mms = _set_mms(hand_root, AVUC_CAP[AVUC_CAP.size() - 1])
+	hand_mms = _set_mms(hand_root, KAPASITE[KAPASITE.size() - 1])
 	for g in set_count:
 		hand_used.append(0)
 	add_child(player)
@@ -1087,11 +1137,11 @@ func _put_in_pile(i: int, xf: Transform3D) -> void:
 
 
 func _grab_count() -> int:
-	return AVUC_GRAB[skills["avuc"]["level"]]
+	return AVUC_GRAB[_lvl("avuc")]
 
 
 func _cap() -> int:
-	return AVUC_CAP[skills["avuc"]["level"]]
+	return KAPASITE[_lvl("kapasite")]
 
 
 # ---------------- Döngü ----------------
@@ -1112,6 +1162,7 @@ func _physics_process(delta: float) -> void:
 	var d := fwd * mv.y + right * mv.x
 	d.y = 0
 	d = d.normalized() * minf(mv.length(), 1.0)
+	d *= HIZ[_lvl("hiz")]
 	var sprint := Input.is_key_pressed(KEY_SHIFT) or touch_sprint
 	var speed := WALK_SPEED * (SPRINT_MULT if sprint else 1.0)
 	player.velocity.x = d.x * speed
@@ -1158,7 +1209,14 @@ func _process(delta: float) -> void:
 		elapsed += delta
 	if message_time > 0.0:
 		message_time -= delta
-	holo_mmi.visible = skills["holo"]["level"] > 0
+	holo_mmi.visible = _lvl("holo") > 0
+	for key in cooldowns:
+		cooldowns[key] = maxf(float(cooldowns[key]) - delta, 0.0)
+	if sezgi_time > 0.0:
+		sezgi_time -= delta
+		if sezgi_time <= 0.0 or fmod(anim, 0.5) < delta:
+			_refresh_glow()
+	_update_compass()
 	holo_ring_mat.albedo_color.a = 0.45 + 0.45 * sin(anim * 5.0)
 	_update_hud()
 
@@ -1191,12 +1249,16 @@ func _unhandled_input(event: InputEvent) -> void:
 				_open_menu()
 			KEY_Q:
 				_drop(true)
-			KEY_1:
-				_try_buy("oto")
-			KEY_2:
-				_try_buy("avuc")
-			KEY_3:
-				_try_buy("holo")
+			KEY_TAB:
+				_open_tree()
+			KEY_Z:
+				_use_ability("sezgi")
+			KEY_F:
+				_use_ability("toplama")
+			KEY_G:
+				_use_ability("ayiklama")
+			KEY_X:
+				_use_ability("son")
 
 
 ## Sol yarı: sanal joystick. Sağ yarı: sürükleyerek bak, kısa dokunuşla kullan.
@@ -1291,9 +1353,14 @@ func _build_touch_ui(layer: CanvasLayer) -> void:
 	_touch_button(layer, "Menü", Vector2(1440, 20), Vector2(140, 70)).pressed.connect(func(): _open_menu())
 	_touch_button(layer, "<", Vector2(20, 110), Vector2(90, 80)).pressed.connect(func(): _cycle(-1))
 	_touch_button(layer, ">", Vector2(120, 110), Vector2(90, 80)).pressed.connect(func(): _cycle(1))
-	for k in SKILL_ORDER.size():
-		var key: String = SKILL_ORDER[k]
-		_touch_button(layer, str(k + 1), Vector2(1280 + k * 100, 120), Vector2(85, 75)).pressed.connect(func(): _try_buy(key))
+	_touch_button(layer, "Ağaç", Vector2(1290, 20), Vector2(140, 70)).pressed.connect(func(): _open_tree())
+	var keys := ["sezgi", "toplama", "ayiklama", "son"]
+	var labels := ["Sezgi", "Topla", "Ayıkla", "Son"]
+	for k in keys.size():
+		var key: String = keys[k]
+		var b := _touch_button(layer, labels[k], Vector2(1100 + k * 120, 470), Vector2(110, 75))
+		b.pressed.connect(func(): _use_ability(key))
+		touch_ability_btns[key] = b
 
 
 func _cycle(dir: int) -> void:
@@ -1444,7 +1511,19 @@ func _place(i: int, g: int, n: int) -> void:
 			paid[i] = true
 			coins += COIN_HOLO if t["holo"] else COIN_PLACE
 			if t["holo"]:
-				_say("HOLO! +%d jeton" % COIN_HOLO)
+				_say("HOLO! +%d puan" % COIN_HOLO)
+		# tür bonusu: aynı türün 3 evrimi de doğru yerdeyse
+		var sp := floori((int(t["num"]) - 1) / 3.0)
+		var sk_i := g * (NUMBERS_PER_SET / 3) + sp
+		if not loading and not species_paid[sk_i]:
+			var all3 := true
+			for e in 3:
+				if not _is_correct(g, sp * 3 + e):
+					all3 = false
+			if all3:
+				species_paid[sk_i] = true
+				coins += COIN_SPECIES
+				_say("Tür tamam: 3 evrim yan yana! +%d puan" % COIN_SPECIES)
 	_check_shelf(g)
 	_refresh_ring(g, n)
 
@@ -1493,7 +1572,7 @@ func _check_shelf(g: int) -> void:
 			if not set_bonus_paid[g]:
 				set_bonus_paid[g] = true
 				coins += COIN_SET
-				_say("%s vitrini tamam! +%d" % [SETS[g]["name"], COIN_SET])
+				_say("%s vitrini tamam! +%d puan" % [SETS[g]["name"], COIN_SET])
 			else:
 				_say("%s vitrini yine tamam!" % SETS[g]["name"])
 	_update_title(g)
@@ -1556,21 +1635,246 @@ func _rebuild_hand() -> void:
 		mm.set_instance_custom_data(j, _custom(i))
 
 
-func _try_buy(key: String) -> void:
+func _try_buy(key: String) -> bool:
 	var sk: Dictionary = skills[key]
 	var lvl: int = sk["level"]
 	var costs: Array = sk["cost"]
 	if lvl >= costs.size():
-		_say("%s zaten en üst seviyede" % sk["name"])
-		return
+		return false
+	var req: String = sk["req"]
+	if req != "" and _lvl(req) == 0:
+		return false
 	var c: int = costs[lvl]
 	if coins < c:
-		_say("Yeterli jeton yok (%d gerekli)" % c)
-		return
+		return false
 	coins -= c
 	sk["level"] = lvl + 1
 	save_dirty = true
 	_say("%s açıldı!" % sk["name"])
+	return true
+
+
+# ---------------- Büyüler ----------------
+func _selected_grp() -> int:
+	if not hand.is_empty():
+		return int(tasos[hand[sel]]["grp"])
+	if target.get("kind", "") == "taso":
+		return int(tasos[target["idx"]]["grp"])
+	return -1
+
+
+func _use_ability(key: String) -> void:
+	if _lvl(key) == 0:
+		_say("Önce gelişim ağacından aç (Tab)")
+		return
+	if cooldowns.has(key) and float(cooldowns[key]) > 0.0:
+		_say("%s hazır değil (%d sn)" % [skills[key]["name"], ceili(float(cooldowns[key]))])
+		return
+	match key:
+		"sezgi":
+			var g := _selected_grp()
+			if g == -1:
+				_say("Elinde ya da baktığın yerde bir taso olmalı")
+				return
+			sezgi_grp = g
+			sezgi_time = SEZGI_SURE[_lvl("sezgi")]
+			_refresh_glow()
+			cooldowns["sezgi"] = CD_SEZGI
+			_say("Sezgi: %s tasoları parlıyor" % SETS[g]["name"])
+		"toplama":
+			var g := _selected_grp()
+			if g == -1:
+				_say("Elinde ya da baktığın yerde bir taso olmalı")
+				return
+			var n := _gather(g, TOPLAMA_R[_lvl("toplama")])
+			cooldowns["toplama"] = CD_TOPLAMA
+			_say("Toplama: %d %s tasosu önüne geldi" % [n, SETS[g]["name"]])
+		"ayiklama":
+			var n := _sort_around(AYIKLAMA_R[_lvl("ayiklama")])
+			cooldowns["ayiklama"] = CD_AYIKLAMA
+			_say("Ayıklama: %d taso setlerine göre yığıldı" % n)
+		"son":
+			_last_touch()
+
+
+func _on_floor_of_player(p: Vector3) -> bool:
+	return absf(p.y - (player.global_position.y - 0.9)) < 1.5
+
+
+## Seçili setin yakındaki tasolarını oyuncunun önüne düzgün bir yığın halinde çeker
+func _gather(g: int, r: float) -> int:
+	var pp := player.global_position
+	var fwd := -player.global_transform.basis.z
+	fwd.y = 0
+	fwd = fwd.normalized()
+	var base := pp + fwd * 1.2
+	base.y = pp.y - 0.9
+	var list: Array = []
+	for i in tasos.size():
+		if in_pile[i] and int(tasos[i]["grp"]) == g:
+			var o := pile_xf[i].origin
+			if _on_floor_of_player(o) and Vector2(o.x - pp.x, o.z - pp.z).length() <= r:
+				list.append(i)
+	for k in list.size():
+		var i: int = list[k]
+		var col := k % 3
+		var row := floori(k / 3.0) % 3
+		var h := floori(k / 9.0)
+		var pos := base + Vector3((col - 1) * 0.28, BASE_Y + h * TASO_H * 1.05, (row - 1) * 0.28)
+		_move_pile(i, Transform3D(Basis(Vector3.UP, randf() * 0.3), pos))
+	_refresh_holo()
+	_refresh_glow()
+	return list.size()
+
+
+## Çevredeki tasoları setlerine göre oyuncunun etrafında ayrı yığınlara dizer
+func _sort_around(r: float) -> int:
+	var pp := player.global_position
+	var groups := {}
+	for i in tasos.size():
+		if not in_pile[i]:
+			continue
+		var o := pile_xf[i].origin
+		if _on_floor_of_player(o) and Vector2(o.x - pp.x, o.z - pp.z).length() <= r:
+			var g: int = tasos[i]["grp"]
+			if not groups.has(g):
+				groups[g] = []
+			groups[g].append(i)
+	var keys := groups.keys()
+	keys.sort()
+	var total := 0
+	for k in keys.size():
+		var ang := TAU * k / keys.size()
+		var c := Vector3(pp.x + cos(ang) * 1.6, pp.y - 0.9, pp.z + sin(ang) * 1.6)
+		var lst: Array = groups[keys[k]]
+		lst.sort_custom(func(a, b): return int(tasos[a]["num"]) < int(tasos[b]["num"]))
+		for j in lst.size():
+			var i: int = lst[j]
+			var off := Vector3((j % 2) * 0.26 - 0.13, 0, (floori(j / 2.0) % 2) * 0.26 - 0.13)
+			var pos := c + off + Vector3(0, BASE_Y + floori(j / 4.0) * TASO_H * 1.05, 0)
+			_move_pile(i, Transform3D(Basis(), pos))
+			total += 1
+	_refresh_holo()
+	_refresh_glow()
+	return total
+
+
+func _move_pile(i: int, xf: Transform3D) -> void:
+	_grid_remove(i)
+	pile_xf[i] = xf
+	_pile_xf(i, xf)
+	_grid_add(i)
+	save_dirty = true
+
+
+## Son 10 (veya daha az) taso kaldığında hepsini doğru yerine koyar
+func _last_touch() -> void:
+	var remaining := set_count * NUMBERS_PER_SET - correct
+	if son_used:
+		_say("Son Dokunuş zaten kullanıldı")
+		return
+	if remaining > 10:
+		_say("Son Dokunuş için en fazla 10 taso kalmalı (şu an %d)" % remaining)
+		return
+	for i in tasos.size():
+		var t: Dictionary = tasos[i]
+		var g: int = t["grp"]
+		var n: int = int(t["num"]) - 1
+		if slots[g][n] == i:
+			continue
+		# taso nerede: yerde, elde ya da yanlış yuvada
+		if in_pile[i]:
+			_take(i)
+			hand.erase(i)
+		elif hand.has(i):
+			hand.erase(i)
+		else:
+			for gg in set_count:
+				var idx: int = slots[gg].find(i)
+				if idx != -1:
+					_unplace(gg, idx)
+		if slots[g][n] != -1:
+			var other := _unplace(g, n)
+			hand.append(other)
+		_place(i, g, n)
+	son_used = true
+	sel = clampi(sel, 0, maxi(hand.size() - 1, 0))
+	_refresh_holo()
+	_rebuild_hand()
+	_say("Son Dokunuş! Kalan tasolar yerine yerleşti")
+
+
+## Sezgi: seçili setin yerdeki tasolarının üstünde parlayan halkalar (derinlik testi yok)
+func _refresh_glow() -> void:
+	var k := 0
+	if sezgi_time > 0.0 and sezgi_grp != -1:
+		for i in tasos.size():
+			if in_pile[i] and int(tasos[i]["grp"]) == sezgi_grp and k < NUMBERS_PER_SET:
+				glow_mm.set_instance_transform(k, pile_xf[i])
+				k += 1
+	glow_mm.visible_instance_count = k
+
+
+func _build_ability_visuals() -> void:
+	var torus := TorusMesh.new()
+	torus.inner_radius = TASO_R + 0.02
+	torus.outer_radius = TASO_R + 0.06
+	glow_mm = MultiMesh.new()
+	glow_mm.transform_format = MultiMesh.TRANSFORM_3D
+	glow_mm.mesh = torus
+	glow_mm.instance_count = NUMBERS_PER_SET
+	glow_mm.visible_instance_count = 0
+	glow_mmi = MultiMeshInstance3D.new()
+	glow_mmi.multimesh = glow_mm
+	var gm := StandardMaterial3D.new()
+	gm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	gm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	gm.no_depth_test = true
+	gm.albedo_color = Color(0.55, 1.0, 0.9, 0.85)
+	glow_mmi.material_override = gm
+	add_child(glow_mmi)
+	# pusula: doğru yuvada halka + vitrinin üstünde ışık sütunu
+	var ct := TorusMesh.new()
+	ct.inner_radius = TASO_R + 0.01
+	ct.outer_radius = TASO_R + 0.05
+	compass_ring = MeshInstance3D.new()
+	compass_ring.mesh = ct
+	var cm := StandardMaterial3D.new()
+	cm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	cm.albedo_color = Color("5dfcff")
+	compass_ring.material_override = cm
+	compass_ring.visible = false
+	add_child(compass_ring)
+	var beam := CylinderMesh.new()
+	beam.top_radius = 0.12
+	beam.bottom_radius = 0.12
+	beam.height = 4.0
+	compass_beam = MeshInstance3D.new()
+	compass_beam.mesh = beam
+	var bm := StandardMaterial3D.new()
+	bm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	bm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	bm.albedo_color = Color(0.36, 0.99, 1.0, 0.35)
+	compass_beam.material_override = bm
+	compass_beam.visible = false
+	add_child(compass_beam)
+
+
+func _update_compass() -> void:
+	compass_ring.visible = false
+	compass_beam.visible = false
+	if _lvl("pusula") == 0 or hand.is_empty():
+		return
+	var t: Dictionary = tasos[hand[sel]]
+	var g: int = t["grp"]
+	var n: int = int(t["num"]) - 1
+	if slots[g][n] == hand[sel]:
+		return
+	var shelf: Node3D = shelves[g]
+	compass_ring.global_transform = shelf.global_transform * Transform3D(Basis(Vector3.RIGHT, PI / 2), _slot_local(n) + Vector3(0, 0, 0.04))
+	compass_ring.visible = true
+	compass_beam.global_position = shelf.global_position + shelf.global_transform.basis.z * 0.6 + Vector3(0, BOARD_Y + 3.0, 0)
+	compass_beam.visible = true
 
 
 func _say(s: String) -> void:
@@ -1673,7 +1977,7 @@ func _write_save() -> void:
 	var data := {
 		"v": 1, "sets": set_count, "per_set": NUMBERS_PER_SET,
 		"coins": coins, "elapsed": snappedf(elapsed, 0.1), "skills": sk_levels,
-		"bonus": set_bonus_paid, "hand": hand, "sel": sel,
+		"bonus": set_bonus_paid, "species": species_paid, "son": son_used, "hand": hand, "sel": sel,
 		"player": [snappedf(pp.x, 0.01), snappedf(pp.y, 0.01), snappedf(pp.z, 0.01), snappedf(player.rotation.y, 0.001), snappedf(cam.rotation.x, 0.001)],
 		"tasos": list, "slots": slot_list,
 	}
@@ -1698,6 +2002,10 @@ func _apply_save(d: Dictionary) -> void:
 	for key in sk_levels:
 		if skills.has(key):
 			skills[key]["level"] = int(sk_levels[key])
+	var spp: Array = d.get("species", [])
+	for k in mini(spp.size(), species_paid.size()):
+		species_paid[k] = bool(spp[k])
+	son_used = bool(d.get("son", false))
 	var bonus: Array = d.get("bonus", [])
 	for g in mini(bonus.size(), set_count):
 		set_bonus_paid[g] = bool(bonus[g])
@@ -1806,6 +2114,7 @@ func _build_menu(has_save: bool) -> void:
 	btn_save.pressed.connect(_on_save_pressed)
 	btn_new = _menu_button(box, "Yeni Oyun")
 	btn_new.pressed.connect(_on_new_game)
+	_menu_button(box, "Gelişim Ağacı").pressed.connect(_open_tree_from_menu)
 	_menu_button(box, "Ayarlar").pressed.connect(_on_settings_pressed)
 	if not OS.has_feature("web"):
 		_menu_button(box, "Çıkış").pressed.connect(_on_quit_pressed)
@@ -1820,7 +2129,99 @@ func _build_menu(has_save: bool) -> void:
 	_slider(sbox, "Dokunmatik hassasiyet", 0.001, 0.015, touch_sens, func(v: float): touch_sens = v)
 	_slider(sbox, "Ses", 0.0, 1.0, volume, _set_volume)
 	_menu_button(sbox, "Geri").pressed.connect(_on_settings_back)
+	_build_tree()
 	menu_layer.visible = false
+
+
+## Gelişim ağacı ekranı: 3 dal, her düğüm bir buton (ad, seviye, açıklama, maliyet)
+func _build_tree() -> void:
+	menu_tree = Control.new()
+	menu_tree.size = Vector2(1600, 900)
+	menu_tree.visible = false
+	menu_layer.add_child(menu_tree)
+	var title := _menu_label(menu_tree, "GELİŞİM AĞACI", 46, Color("ffd36b"))
+	title.position = Vector2(0, 30)
+	title.size = Vector2(1600, 60)
+	tree_points = _menu_label(menu_tree, "", 22, Color(1, 1, 1, 0.9))
+	tree_points.position = Vector2(0, 92)
+	tree_points.size = Vector2(1600, 34)
+	var heads := ["TAŞIMA VE HAREKET", "GÖRÜŞ", "BÜYÜLER"]
+	var cols: Array = []
+	for b in 3:
+		var col := VBoxContainer.new()
+		col.position = Vector2(95 + b * 480, 145)
+		col.size = Vector2(450, 650)
+		col.add_theme_constant_override("separation", 10)
+		menu_tree.add_child(col)
+		_menu_label(col, heads[b], 22, Color("c9a46a"))
+		cols.append(col)
+	for key in TREE_ORDER:
+		var sk: Dictionary = skills[key]
+		var col: VBoxContainer = cols[int(sk["branch"])]
+		var b := _menu_button(col, "")
+		b.custom_minimum_size = Vector2(450, 120)
+		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		b.add_theme_font_size_override("font_size", 16)
+		b.pressed.connect(_on_tree_pressed.bind(key))
+		tree_buttons[key] = b
+	var back := _menu_button(menu_tree, "Oyuna dön")
+	back.position = Vector2(590, 815)
+	back.pressed.connect(_close_menu)
+	_refresh_tree()
+
+
+func _refresh_tree() -> void:
+	tree_points.text = "Puan: %d     (doğru taso +%d, holo +%d, tür tamamlama +%d, vitrin tamamlama +%d)" % [coins, COIN_PLACE, COIN_HOLO, COIN_SPECIES, COIN_SET]
+	for key in TREE_ORDER:
+		var sk: Dictionary = skills[key]
+		var b: Button = tree_buttons[key]
+		var costs: Array = sk["cost"]
+		var lv: int = sk["level"]
+		var req: String = sk["req"]
+		var head := "%s   (Sv %d/%d)" % [sk["name"], lv, costs.size()]
+		var tail := ""
+		var col := Color("f6e7c8")
+		if lv >= costs.size():
+			tail = "TAMAMLANDI"
+			col = Color("9be07a")
+		elif req != "" and _lvl(req) == 0:
+			tail = "Kilitli: önce %s" % String(skills[req]["name"]).split(" [")[0]
+			col = Color(1, 1, 1, 0.4)
+		else:
+			var c: int = costs[lv]
+			tail = "Maliyet: %d puan" % c
+			col = Color("ffd36b") if coins >= c else Color(1, 1, 1, 0.6)
+		b.text = "  %s\n  %s\n  %s" % [head, sk["desc"], tail]
+		b.add_theme_color_override("font_color", col)
+		b.add_theme_color_override("font_hover_color", col)
+
+
+func _on_tree_pressed(key: String) -> void:
+	var sk: Dictionary = skills[key]
+	var costs: Array = sk["cost"]
+	var lv: int = sk["level"]
+	var req: String = sk["req"]
+	if lv < costs.size() and coins < int(costs[lv]) and (req == "" or _lvl(req) > 0):
+		tree_points.text = "Yeterli puan yok: %d gerekli, %d var" % [int(costs[lv]), coins]
+		return
+	if _try_buy(key):
+		_refresh_tree()
+
+
+func _open_tree_from_menu() -> void:
+	menu_main.visible = false
+	menu_tree.visible = true
+	_refresh_tree()
+
+
+func _open_tree() -> void:
+	if menu_layer == null:
+		return
+	_open_menu()
+	menu_main.visible = false
+	menu_settings.visible = false
+	menu_tree.visible = true
+	_refresh_tree()
 
 
 func _on_save_pressed() -> void:
@@ -1868,6 +2269,7 @@ func _open_menu() -> void:
 	menu_layer.visible = true
 	menu_main.visible = true
 	menu_settings.visible = false
+	menu_tree.visible = false
 	new_confirm = false
 	btn_new.text = "Yeni Oyun"
 	btn_save.text = "Kaydet"
@@ -1875,7 +2277,7 @@ func _open_menu() -> void:
 	if started:
 		btn_continue.text = "Devam Et"
 	var s := int(elapsed)
-	menu_stats.text = "Doğru dizilen: %d / %d     Jeton: %d     Süre: %02d:%02d:%02d" % [correct, set_count * NUMBERS_PER_SET, coins, floori(s / 3600.0), floori(s / 60.0) % 60, s % 60]
+	menu_stats.text = "Doğru dizilen: %d / %d     Puan: %d     Süre: %02d:%02d:%02d" % [correct, set_count * NUMBERS_PER_SET, coins, floori(s / 3600.0), floori(s / 60.0) % 60, s % 60]
 	get_tree().paused = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	if started and save_dirty:
@@ -1940,10 +2342,10 @@ func _build_hud() -> void:
 	var help := _mk_label(layer, Vector2(1040, 14), 14, Color(1, 1, 1, 0.6))
 	if touch_mode:
 		hud_hand.position = Vector2(20, 200)
-		help.text = "Sol taraf: yürü  •  Sağ taraf: sürükle bak, dokun al/koy\n< >: eldeki tasoyu seç  •  1-3: yetenek satın al"
+		help.text = "Sol taraf: yürü  •  Sağ taraf: sürükle bak, dokun al/koy\n< >: eldeki tasoyu seç  •  Ağaç: gelişim ağacı"
 		_build_touch_ui(layer)
 	else:
-		help.text = "WASD yürü  •  Shift koş  •  Boşluk zıpla  •  Fare bak\nSol tık: taso al / boş yuvaya koy / dolu yuvadakini eline al\nTekerlek: eldeki tasoyu seç\nQ: seçiliyi bırak  •  Sağ tık: hepsini bırak\n1-3: yetenek satın al  •  Esc: menü"
+		help.text = "WASD yürü  •  Shift koş  •  Boşluk zıpla  •  Fare bak\nSol tık: taso al / boş yuvaya koy / dolu yuvadakini eline al\nTekerlek: eldeki tasoyu seç\nQ: seçiliyi bırak  •  Sağ tık: hepsini bırak\nTab: gelişim ağacı  •  Z/F/G/X: büyüler  •  Esc: menü"
 
 
 func _taso_name(i: int) -> String:
@@ -1954,7 +2356,7 @@ func _taso_name(i: int) -> String:
 func _update_hud() -> void:
 	var total := set_count * NUMBERS_PER_SET
 	var s := int(elapsed)
-	hud_stats.text = "Jeton: %d      Doğru: %d/%d      Vitrinde: %d      Yerde: %d      Süre: %02d:%02d" % [coins, correct, total, placed, pile_count, floori(s / 60.0), s % 60]
+	hud_stats.text = "Puan: %d      Doğru: %d/%d      Vitrinde: %d      Yerde: %d      Süre: %02d:%02d" % [coins, correct, total, placed, pile_count, floori(s / 60.0), s % 60]
 
 	if hand.is_empty():
 		hud_hand.text = "Elde (0/%d)" % _cap()
@@ -1987,14 +2389,33 @@ func _update_hud() -> void:
 		_:
 			hud_info.text = ""
 
-	var lines: Array = ["YETENEKLER"]
-	for k in SKILL_ORDER.size():
-		var sk: Dictionary = skills[SKILL_ORDER[k]]
+	var lines: Array = []
+	for key in ABILITY_KEYS:
+		var open := _lvl(key) > 0
+		if touch_ability_btns.has(key):
+			var tb: Button = touch_ability_btns[key]
+			tb.visible = open
+		if not open:
+			continue
+		var st := "hazır"
+		if cooldowns.has(key) and float(cooldowns[key]) > 0.0:
+			st = "%d sn" % ceili(float(cooldowns[key]))
+		if key == "son":
+			st = "kullanıldı" if son_used else ("hazır" if set_count * NUMBERS_PER_SET - correct <= 10 else "son 10 tasoda")
+		if key == "sezgi" and sezgi_time > 0.0:
+			st = "aktif %d sn" % ceili(sezgi_time)
+		lines.append("[%s] %s: %s" % [ABILITY_KEYS[key], String(skills[key]["name"]).split(" [")[0], st])
+	var can_buy := false
+	for key in TREE_ORDER:
+		var sk: Dictionary = skills[key]
 		var costs: Array = sk["cost"]
-		var lvl: int = sk["level"]
-		var lv_txt := "" if costs.size() == 1 else " Sv %d/%d" % [lvl, costs.size()]
-		var price := "AÇIK" if lvl >= costs.size() else "%d jeton" % costs[lvl]
-		lines.append("[%d] %s%s  –  %s  (%s)" % [k + 1, sk["name"], lv_txt, price, sk["desc"]])
+		var lv: int = sk["level"]
+		var rq: String = sk["req"]
+		if lv < costs.size() and coins >= int(costs[lv]) and (rq == "" or _lvl(rq) > 0):
+			can_buy = true
+			break
+	if can_buy:
+		lines.append("Gelişim ağacında açabileceğin bir şey var! (Tab)")
 	hud_skills.text = "\n".join(lines)
 
 	hud_msg.text = message if message_time > 0.0 else ""

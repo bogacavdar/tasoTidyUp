@@ -19,9 +19,9 @@ Godot ile yapılan bir "kaostan düzene" toplu dizme oyunu. Oyuncu birinci şah�
   - Yanlış yerdeki taso kırmızı halkayla gösterilir.
   - Tamamen doğru dizilen vitrin yeşile döner.
   - Doğru yere oturan taso çan sesi çıkarır.
-- **Jeton:** Sadece bir taso doğru yere ilk kez oturduğunda verilir.
+- **Puan:** Doğru yere ilk kez oturan taso +1 (holo +3), bir türün 3 evrimi doğru yerde +2, tamamlanan vitrin +25. Puanlar gelişim ağacında harcanır.
 - **Taşıma:** Elde birden fazla taso tutulabilir, fare tekerleğiyle seçilir. Zıplama ve Shift ile koşu var.
-- **3 yetenek:** Otomatik Dizme, Avuç, Holo Dedektörü.
+- **Gelişim ağacı (Tab):** Taşıma ve hareket (El Kapasitesi, Avuç, Hız), Görüş (Sezgi, Vitrin Pusulası, Holo Dedektörü), Büyüler (Toplama, Otomatik Dizme, Ayıklama, Son Dokunuş). Büyüler bekleme sürelidir: Z Sezgi, F Toplama, G Ayıklama, X Son Dokunuş.
 
 ### İndir
 
@@ -44,7 +44,7 @@ Her `main` push'unda GitHub Actions web build alıp GitHub Pages'e yayınlar: ht
 - **Sol tık:** yerden taso al / seçili tasoyu boş yuvaya koy / dolu yuvadaki tasoyu eline al (bir yuvada tek taso olur)
 - **Fare tekerleği:** eldeki tasolar arasında seçim yap
 - **Q:** seçili tasoyu bırak, **sağ tık:** elindekilerin hepsini bırak
-- **1-3:** yetenek satın al
+- **Tab:** gelişim ağacı, **Z / F / G / X:** büyüler
 - **Esc:** menü (telefonda sağ üstteki Menü butonu)
 
 ## Kayıt ve menü
