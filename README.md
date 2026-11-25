@@ -19,9 +19,9 @@ Godot ile yapılan bir "kaostan düzene" toplu dizme oyunu. Oyuncu birinci şah�
   - Yanlış yerdeki taso kırmızı halkayla gösterilir.
   - Tamamen doğru dizilen vitrin yeşile döner.
   - Doğru yere oturan taso çan sesi çıkarır.
-- **Puan:** Doğru yere ilk kez oturan taso +1 (holo +3), bir türün 3 evrimi doğru yerde +2, tamamlanan vitrin +25. Puanlar gelişim ağacında harcanır.
+- **Puan:** Doğru yere ilk kez oturan taso +1, bir türün 3 evrimi doğru yerde +2, tamamlanan vitrin +25. Puanlar gelişim ağacında harcanır.
 - **Taşıma:** Elde birden fazla taso tutulabilir, fare tekerleğiyle seçilir. Zıplama ve Shift ile koşu var.
-- **Gelişim ağacı (Tab):** Taşıma ve hareket (El Kapasitesi, Avuç, Hız), Görüş (Sezgi, Vitrin Pusulası, Holo Dedektörü), Büyüler (Toplama, Otomatik Dizme, Ayıklama, Son Dokunuş). Büyüler bekleme sürelidir: Z Sezgi, F Toplama, G Ayıklama, X Son Dokunuş.
+- **Gelişim ağacı (Tab):** Taşıma ve hareket (El Kapasitesi, Avuç, Hız), Görüş (Sezgi, Vitrin Pusulası), Büyüler (Toplama, Otomatik Dizme, Ayıklama). Büyüler bekleme sürelidir: Z Sezgi, F Toplama, G Ayıklama.
 
 ### İndir
 
@@ -44,7 +44,7 @@ Her `main` push'unda GitHub Actions web build alıp GitHub Pages'e yayınlar: ht
 - **Sol tık:** yerden taso al / seçili tasoyu boş yuvaya koy / dolu yuvadaki tasoyu eline al (bir yuvada tek taso olur)
 - **Fare tekerleği:** eldeki tasolar arasında seçim yap
 - **Q:** seçili tasoyu bırak, **sağ tık:** elindekilerin hepsini bırak
-- **Tab:** gelişim ağacı, **Z / F / G / X:** büyüler
+- **Tab:** gelişim ağacı, **Z / F / G:** büyüler
 - **Esc:** menü (telefonda sağ üstteki Menü butonu)
 
 ## Kayıt ve menü
@@ -65,7 +65,7 @@ Her `main` push'unda GitHub Actions web build alıp GitHub Pages'e yayınlar: ht
 3. Yetenek ağacı ve ekonomi (15-20 yetenek)
 4. Modüler yaratık sistemi ve görsel stil (gövde aileleri, parçalar, elementler, evrim)
 5. İçerik: 34 set, 5100 benzersiz taso için özgün yaratıklar
-6. His ve cila: sesler, paket açma, holo shader
+6. His ve cila: sesler, paket açma
 7. Steam sayfası, devlog, demo, çıkış
 
 Sonra: aynı motorla kartlı versiyon.
