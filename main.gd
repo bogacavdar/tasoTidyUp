@@ -61,6 +61,18 @@ const SETS := [
 	{"name": "Kaya Kalesi", "code": "KA"}, {"name": "Dalga Kıyısı", "code": "DK"},
 	{"name": "Volkan Ağzı", "code": "VA"}, {"name": "Çiçek Vadisi", "code": "ÇV"},
 ]
+# Her setin çizim teması: [motif, ana renk tonu (0-1), mod]
+# motif: 0 yaratık, 1 balık, 2 çiçek/mercan, 3 kristal, 4 gök cismi, 5 mantar, 6 kuş/yarasa, 7 manzara, 8 böcek
+# mod: 0 normal, 1 gece/koyu, 2 pastel, 3 taş/metalik
+const SET_ART := [
+	[0, 0.03, 0], [1, 0.60, 0], [0, 0.08, 3], [6, 0.72, 1], [7, 0.55, 2], [4, 0.14, 0],
+	[8, 0.10, 2], [5, 0.00, 0], [3, 0.60, 3], [2, 0.95, 0], [0, 0.75, 1], [2, 0.15, 2],
+	[7, 0.02, 0], [0, 0.30, 3], [3, 0.50, 0], [4, 0.62, 1], [6, 0.55, 2], [7, 0.04, 0],
+	[2, 0.38, 0], [6, 0.60, 3], [8, 0.09, 0], [1, 0.55, 3], [5, 0.30, 1], [4, 0.10, 0],
+	[4, 0.70, 1], [0, 0.58, 2], [8, 0.13, 0], [7, 0.78, 0], [2, 0.85, 2], [4, 0.58, 2],
+	[3, 0.08, 3], [7, 0.52, 0], [0, 0.02, 1], [2, 0.90, 0],
+]
+
 const PALETTE := [
 	"e6194b", "3cb44b", "ffe119", "4363d8", "f58231", "911eb4", "42d4f4", "f032e6",
 	"bfef45", "fabed4", "469990", "dcbeff", "9a6324", "fffac8", "800000", "aaffc3",
@@ -791,7 +803,9 @@ func _build_pile() -> void:
 
 func _custom(i: int) -> Color:
 	var t: Dictionary = tasos[i]
-	return Color(float(_uid(t)), 1.0 if t["holo"] else 0.0, 0.0, 0.0)
+	var art: Array = SET_ART[int(t["grp"]) % SET_ART.size()]
+	var theme: float = float(art[2]) + float(art[1])
+	return Color(float(_uid(t)), 1.0 if t["holo"] else 0.0, float(art[0]), theme)
 
 
 func _taso_color(i: int) -> Color:

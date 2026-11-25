@@ -12,7 +12,7 @@ Godot ile yapılan bir "kaostan düzene" toplu dizme oyunu. Oyuncu birinci şah�
   - Sol ve sağ duvarlarda 6'şar, ortada 4 çift taraflı stand (8), ön duvarda 4, asma katta 10.
   - Her vitrinde yan panolar, üst kapak, alt dolap, her sırada raf çıtası, cam ön yüz, LED şerit ve set renginde başlık var.
   - 10 sütun × 15 satır yuva.
-- **Kor Vadisi seti:** 150 tasonun her birinde kodla çizilmiş özgün bir yaratık var. Gövde, renk, kulak/boynuz/anten, göz sayısı, ağız, benek ve kuyruk taso numarasından türetiliyor.
+- **Taso çizimleri:** 34 setin her birinde temaya uygun çizimler var, her biri taso numarasından türetiliyor. Hepsi kodla, ekran kartında çiziliyor (`taso.gdshader`). Motifler: yaratık, balık, çiçek/mercan, kristal, gök cismi, mantar, kuş/yarasa, manzara, böcek. Setler gece, pastel ve taş/metalik gibi renk havalarına ayrılıyor.
 - **5100 benzersiz taso:** 34 set × 150 numara, her setin kendine ait belirgin bir rengi var. İki katın zeminine rastgele saçılmış.
 - **Yuvalar:** Koyu ahşap panoda krem halkalar. Baktığın yuvanın etrafında sarı bir halka çıkar.
 - **Dizme:** Her taso her yuvaya konabilir, sırayı oyuncu kurar. Doğru sıra soldan sağa, yukarıdan aşağı 1-150.
