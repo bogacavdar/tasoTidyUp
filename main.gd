@@ -21,10 +21,10 @@ const ROOM_W := 60.0           # x
 const ROOM_D := 50.0           # z
 const WALL_H := 7.0
 
-const SLOT_COLS := 15
-const SLOT_ROWS := 10
+const SLOT_COLS := 10
+const SLOT_ROWS := 15
 const SLOT_GAP := 0.28
-const BOARD_Y := 1.86          # vitrin panosunun orta yüksekliği
+const BOARD_Y := 2.46          # vitrin panosunun orta yüksekliği (en alt sıra ~0.5 m)
 
 const WALK_SPEED := 4.5
 const SPRINT_MULT := 2.0

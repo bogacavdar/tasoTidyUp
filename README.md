@@ -6,7 +6,7 @@ Godot ile yapılan bir "kaostan düzene" toplu dizme oyunu. Oyuncu birinci şah�
 
 - 60×50 m'lik depo. Bütün tasolar zemine tamamen rastgele saçılmış.
 - **5100 benzersiz taso:** 34 set × 150 numara, kopya yok. Yaklaşık %4'ü holo.
-- Her setin duvarda bir vitrini var (15 × 10 yuva), toplam 34 vitrin.
+- Her setin duvarda bir vitrini var (10 sütun × 15 satır), toplam 34 vitrin.
 - Yuvalarda numara yazmıyor. Her taso her yuvaya konabilir, sırayı oyuncu kurar (soldan sağa, yukarıdan aşağı 1-150).
 - Yanlış yerdeki taso kırmızı halkayla gösterilir. Tamamen doğru dizilen vitrin yeşile döner.
 - Dolu yuvaya tıklayınca taso geri alınır ya da elindeki seçili tasoyla yer değiştirir.
