@@ -41,11 +41,16 @@ Her `main` push'unda GitHub Actions web build alıp GitHub Pages'e yayınlar: ht
 ### Kontroller
 
 - **WASD:** yürü, **Shift:** koş, **Boşluk:** zıpla, **fare:** bak
-- **Sol tık:** yığından taso al / seçili tasoyu boş yuvaya koy / dolu yuvadan geri al ya da seçiliyle değiştir
+- **Sol tık:** yerden taso al / seçili tasoyu boş yuvaya koy / dolu yuvadaki tasoyu eline al (bir yuvada tek taso olur)
 - **Fare tekerleği:** eldeki tasolar arasında seçim yap
 - **Q:** seçili tasoyu bırak, **sağ tık:** elindekilerin hepsini bırak
 - **1-3:** yetenek satın al
-- **R:** yeniden başla, **Esc:** fareyi serbest bırak
+- **Esc:** menü (telefonda sağ üstteki Menü butonu)
+
+## Kayıt ve menü
+
+- İlerleme otomatik kaydedilir: değişiklik varsa 20 saniyede bir, menü açılınca, pencere arka plana geçince ve çıkarken. Tarayıcıda, Windows'ta ve Android'de ayrı ayrı çalışır (`user://kayit.json`).
+- Açılışta ve Esc ile menü: Devam Et, Kaydet, Yeni Oyun (iki kez onaylı), Ayarlar (fare/dokunmatik hassasiyeti, ses), Çıkış (tarayıcıda yok).
 
 ## Görseller
 

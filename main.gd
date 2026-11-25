@@ -42,7 +42,9 @@ const WALK_SPEED := 4.5
 const SPRINT_MULT := 2.0
 const JUMP_VELOCITY := 4.8
 const GRAVITY := 12.0
-const MOUSE_SENS := 0.0025
+const SAVE_PATH := "user://kayit.json"
+const SETTINGS_PATH := "user://ayarlar.json"
+const AUTOSAVE_SEC := 20.0
 
 const SETS := [
 	{"name": "Kor Vadisi", "code": "KV"}, {"name": "Derin Su", "code": "DS"},
@@ -168,7 +170,6 @@ var snd_set: AudioStreamWAV
 var last_sfx_frame := -1
 
 # Dokunmatik (telefon) kontrolleri
-const TOUCH_LOOK_SENS := 0.005
 const JOY_RADIUS := 110.0
 var touch_mode := false
 var move_id := -1
@@ -182,6 +183,25 @@ var touch_jump := false
 var touch_sprint := false
 var joy_base: Panel
 var joy_knob: Panel
+
+# Kayıt ve menü
+static var skip_menu := false        # "Yeni Oyun" sonrası menüyü atlayıp doğrudan başla
+var mouse_sens := 0.0025
+var touch_sens := 0.005
+var volume := 0.8
+var loading := false
+var save_dirty := false
+var save_timer := 0.0
+var started := false
+var menu_layer: CanvasLayer
+var menu_main: Control
+var menu_settings: Control
+var menu_stats: Label
+var btn_continue: Button
+var btn_new: Button
+var btn_save: Button
+var new_confirm := false
+var capture_grace := 0.0
 
 var hud_stats: Label
 var hud_info: Label
@@ -199,13 +219,25 @@ func _ready() -> void:
 	_build_atlas()
 	_make_taso_material()
 	_make_env_materials()
+	_load_settings()
 	_build_world()
 	_build_player()
-	_spawn_tasos()
+	var data := _read_save()
+	_spawn_tasos(data)
 	_build_pile()
 	_build_hud()
 	_build_sounds()
-	_say("Bir yığına yürü, tasoya bak ve sol tıkla!")
+	if not data.is_empty():
+		_apply_save(data)
+		_say("Kaldığın yerden devam ediyorsun")
+	else:
+		_say("Bir tasoya bak ve sol tıkla!")
+	_build_menu(not data.is_empty())
+	if skip_menu:
+		skip_menu = false
+		_close_menu()
+	else:
+		_open_menu()
 
 
 func _init_skills() -> void:
@@ -891,7 +923,24 @@ func _build_player() -> void:
 
 
 # ---------------- Tasolar ----------------
-func _spawn_tasos() -> void:
+func _spawn_tasos(data: Dictionary) -> void:
+	if data.has("tasos"):
+		var list: Array = data["tasos"]
+		for i in list.size():
+			var e: Array = list[i]
+			var holo_s: bool = int(e[2]) == 1
+			tasos.append({"grp": int(e[0]), "num": int(e[1]), "holo": holo_s})
+			if holo_s:
+				holo_list.append(i)
+			paid.append(int(e[3]) == 1)
+			var ip: bool = int(e[4]) == 1
+			in_pile.append(ip)
+			var q := Quaternion(float(e[8]), float(e[9]), float(e[10]), float(e[11])).normalized()
+			pile_xf.append(Transform3D(Basis(q), Vector3(float(e[5]), float(e[6]), float(e[7]))))
+			if ip:
+				_grid_add(i)
+				pile_count += 1
+		return
 	var pairs: Array = []
 	for g in set_count:
 		for n in NUMBERS_PER_SET:
@@ -950,7 +999,7 @@ func _build_pile() -> void:
 		var t: Dictionary = tasos[i]
 		var mm: MultiMesh = pile_mms[t["grp"]]
 		var k: int = t["num"] - 1
-		mm.set_instance_transform(k, pile_xf[i])
+		mm.set_instance_transform(k, pile_xf[i] if in_pile[i] else hidden_xf)
 		mm.set_instance_custom_data(k, _custom(i))
 		mm.set_instance_color(k, _taso_color(i))
 		var smm: MultiMesh = shelf_mms[t["grp"]]
@@ -1020,6 +1069,7 @@ func _grid_remove(i: int) -> void:
 
 
 func _take(i: int) -> void:
+	save_dirty = true
 	_grid_remove(i)
 	in_pile[i] = false
 	pile_count -= 1
@@ -1028,6 +1078,7 @@ func _take(i: int) -> void:
 
 
 func _put_in_pile(i: int, xf: Transform3D) -> void:
+	save_dirty = true
 	pile_xf[i] = xf
 	in_pile[i] = true
 	pile_count += 1
@@ -1093,6 +1144,15 @@ func _update_hover() -> void:
 
 
 func _process(delta: float) -> void:
+	if save_dirty:
+		save_timer += delta
+		if save_timer >= AUTOSAVE_SEC:
+			_write_save()
+	# tarayıcıda Esc fare kilidini kendisi kaldırır: o zaman menüyü aç
+	if capture_grace > 0.0:
+		capture_grace -= delta
+	elif started and not touch_mode and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+		_open_menu()
 	anim += delta
 	if not finished:
 		elapsed += delta
@@ -1108,8 +1168,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		_touch_input(event)
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		player.rotate_y(-event.relative.x * MOUSE_SENS)
-		cam.rotation.x = clampf(cam.rotation.x - event.relative.y * MOUSE_SENS, -1.5, 1.5)
+		player.rotate_y(-event.relative.x * mouse_sens)
+		cam.rotation.x = clampf(cam.rotation.x - event.relative.y * mouse_sens, -1.5, 1.5)
 		return
 	if event is InputEventMouseButton and event.pressed:
 		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
@@ -1128,11 +1188,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		match event.keycode:
 			KEY_ESCAPE:
-				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+				_open_menu()
 			KEY_Q:
 				_drop(true)
-			KEY_R:
-				get_tree().reload_current_scene()
 			KEY_1:
 				_try_buy("oto")
 			KEY_2:
@@ -1180,8 +1238,8 @@ func _touch_input(event: InputEvent) -> void:
 			joy_knob.position = move_origin + off - joy_knob.size / 2.0
 		elif e.index == look_id:
 			look_travel += e.relative.length()
-			player.rotate_y(-e.relative.x * TOUCH_LOOK_SENS)
-			cam.rotation.x = clampf(cam.rotation.x - e.relative.y * TOUCH_LOOK_SENS, -1.5, 1.5)
+			player.rotate_y(-e.relative.x * touch_sens)
+			cam.rotation.x = clampf(cam.rotation.x - e.relative.y * touch_sens, -1.5, 1.5)
 
 
 func _round_panel(col: Color, size: float) -> Panel:
@@ -1230,6 +1288,7 @@ func _build_touch_ui(layer: CanvasLayer) -> void:
 	run.toggled.connect(func(on: bool): touch_sprint = on)
 	_touch_button(layer, "Bırak", Vector2(1420, 560), Vector2(150, 110)).pressed.connect(func(): _drop(true))
 	_touch_button(layer, "Hepsini\nbırak", Vector2(1260, 620), Vector2(140, 110)).pressed.connect(func(): _drop(false))
+	_touch_button(layer, "Menü", Vector2(1440, 20), Vector2(140, 70)).pressed.connect(func(): _open_menu())
 	_touch_button(layer, "<", Vector2(20, 110), Vector2(90, 80)).pressed.connect(func(): _cycle(-1))
 	_touch_button(layer, ">", Vector2(120, 110), Vector2(90, 80)).pressed.connect(func(): _cycle(1))
 	for k in SKILL_ORDER.size():
@@ -1358,16 +1417,13 @@ func _use_shelf(body: Node, hp: Vector3) -> void:
 		hand.remove_at(sel)
 		_place(i, g, slot)
 	else:
-		# Dolu yuva: el boşsa geri al, doluysa seçiliyle yer değiştir
-		if hand.is_empty():
-			var old := _unplace(g, slot)
-			hand.append(old)
-			sel = 0
-		else:
-			var i: int = hand[sel]
-			var old := _unplace(g, slot)
-			hand[sel] = old
-			_place(i, g, slot)
+		# Dolu yuva: bir yuvada tek taso olur; tıklayınca oradaki taso ele gelir
+		if hand.size() >= _cap():
+			_say("Elin dolu (%d)! Önce bir tasoyu yerleştir ya da bırak" % _cap())
+			return
+		var old := _unplace(g, slot)
+		hand.append(old)
+		sel = hand.size() - 1
 	sel = clampi(sel, 0, maxi(hand.size() - 1, 0))
 	_rebuild_hand()
 
@@ -1376,13 +1432,15 @@ func _place(i: int, g: int, n: int) -> void:
 	var t: Dictionary = tasos[i]
 	slots[g][n] = i
 	placed += 1
+	save_dirty = true
 	var shelf: Node3D = shelves[g]
 	var smm: MultiMesh = shelf_mms[t["grp"]]
 	smm.set_instance_transform(int(t["num"]) - 1, shelf.global_transform * Transform3D(Basis(Vector3.RIGHT, PI / 2), _slot_local(n) + Vector3(0, 0, 0.009)))
 	if _is_correct(g, n):
 		correct += 1
-		_play(snd_holo if t["holo"] else snd_correct)
-		if not paid[i]:
+		if not loading:
+			_play(snd_holo if t["holo"] else snd_correct)
+		if not paid[i] and not loading:
 			paid[i] = true
 			coins += COIN_HOLO if t["holo"] else COIN_PLACE
 			if t["holo"]:
@@ -1397,6 +1455,7 @@ func _unplace(g: int, n: int) -> int:
 		correct -= 1
 	slots[g][n] = -1
 	placed -= 1
+	save_dirty = true
 	var t: Dictionary = tasos[i]
 	var smm: MultiMesh = shelf_mms[t["grp"]]
 	smm.set_instance_transform(int(t["num"]) - 1, hidden_xf)
@@ -1429,7 +1488,7 @@ func _check_shelf(g: int) -> void:
 		hm.emission_enabled = done
 		for k in NUMBERS_PER_SET:
 			_refresh_ring(g, k)
-		if done:
+		if done and not loading:
 			_play(snd_set, true)
 			if not set_bonus_paid[g]:
 				set_bonus_paid[g] = true
@@ -1510,6 +1569,7 @@ func _try_buy(key: String) -> void:
 		return
 	coins -= c
 	sk["level"] = lvl + 1
+	save_dirty = true
 	_say("%s açıldı!" % sk["name"])
 
 
@@ -1568,6 +1628,281 @@ func _play(stream: AudioStreamWAV, force: bool = false) -> void:
 	sfx.play()
 
 
+# ---------------- Kayıt ----------------
+func _read_save() -> Dictionary:
+	if not FileAccess.file_exists(SAVE_PATH):
+		return {}
+	var f := FileAccess.open(SAVE_PATH, FileAccess.READ)
+	if f == null:
+		return {}
+	var parsed: Variant = JSON.parse_string(f.get_as_text())
+	f.close()
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return {}
+	var d: Dictionary = parsed
+	# set yapısı değiştiyse eski kaydı kullanma
+	if int(d.get("sets", 0)) != set_count or int(d.get("per_set", 0)) != NUMBERS_PER_SET:
+		return {}
+	var list: Array = d.get("tasos", [])
+	if list.size() != set_count * NUMBERS_PER_SET:
+		return {}
+	return d
+
+
+func _write_save() -> void:
+	if not started and tasos.is_empty():
+		return
+	var list: Array = []
+	for i in tasos.size():
+		var t: Dictionary = tasos[i]
+		var xf: Transform3D = pile_xf[i]
+		var q := xf.basis.get_rotation_quaternion()
+		var o := xf.origin
+		list.append([t["grp"], t["num"], 1 if t["holo"] else 0, 1 if paid[i] else 0, 1 if in_pile[i] else 0,
+			snappedf(o.x, 0.001), snappedf(o.y, 0.001), snappedf(o.z, 0.001),
+			snappedf(q.x, 0.0001), snappedf(q.y, 0.0001), snappedf(q.z, 0.0001), snappedf(q.w, 0.0001)])
+	var slot_list: Array = []
+	for g in set_count:
+		for n in NUMBERS_PER_SET:
+			if slots[g][n] != -1:
+				slot_list.append([g, n, slots[g][n]])
+	var sk_levels := {}
+	for key in skills:
+		sk_levels[key] = skills[key]["level"]
+	var pp := player.global_position
+	var data := {
+		"v": 1, "sets": set_count, "per_set": NUMBERS_PER_SET,
+		"coins": coins, "elapsed": snappedf(elapsed, 0.1), "skills": sk_levels,
+		"bonus": set_bonus_paid, "hand": hand, "sel": sel,
+		"player": [snappedf(pp.x, 0.01), snappedf(pp.y, 0.01), snappedf(pp.z, 0.01), snappedf(player.rotation.y, 0.001), snappedf(cam.rotation.x, 0.001)],
+		"tasos": list, "slots": slot_list,
+	}
+	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+	if f == null:
+		return
+	f.store_string(JSON.stringify(data))
+	f.close()
+	save_dirty = false
+	save_timer = 0.0
+
+
+func _apply_save(d: Dictionary) -> void:
+	loading = true
+	for e in d.get("slots", []):
+		var ea: Array = e
+		_place(int(ea[2]), int(ea[0]), int(ea[1]))
+	loading = false
+	coins = int(d.get("coins", 0))
+	elapsed = float(d.get("elapsed", 0.0))
+	var sk_levels: Dictionary = d.get("skills", {})
+	for key in sk_levels:
+		if skills.has(key):
+			skills[key]["level"] = int(sk_levels[key])
+	var bonus: Array = d.get("bonus", [])
+	for g in mini(bonus.size(), set_count):
+		set_bonus_paid[g] = bool(bonus[g])
+	hand.clear()
+	for i in d.get("hand", []):
+		hand.append(int(i))
+	sel = clampi(int(d.get("sel", 0)), 0, maxi(hand.size() - 1, 0))
+	var pl: Array = d.get("player", [])
+	if pl.size() == 5:
+		player.global_position = Vector3(float(pl[0]), float(pl[1]), float(pl[2]))
+		player.rotation.y = float(pl[3])
+		cam.rotation.x = float(pl[4])
+	_refresh_holo()
+	_rebuild_hand()
+	save_dirty = false
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_APPLICATION_PAUSED:
+		if started and save_dirty:
+			_write_save()
+
+
+func _load_settings() -> void:
+	if FileAccess.file_exists(SETTINGS_PATH):
+		var f := FileAccess.open(SETTINGS_PATH, FileAccess.READ)
+		var parsed: Variant = JSON.parse_string(f.get_as_text())
+		f.close()
+		if typeof(parsed) == TYPE_DICTIONARY:
+			var d: Dictionary = parsed
+			mouse_sens = float(d.get("mouse", mouse_sens))
+			touch_sens = float(d.get("touch", touch_sens))
+			volume = float(d.get("volume", volume))
+	AudioServer.set_bus_volume_db(0, linear_to_db(maxf(volume, 0.001)))
+
+
+func _save_settings() -> void:
+	var f := FileAccess.open(SETTINGS_PATH, FileAccess.WRITE)
+	if f != null:
+		f.store_string(JSON.stringify({"mouse": mouse_sens, "touch": touch_sens, "volume": volume}))
+		f.close()
+
+
+# ---------------- Menü ----------------
+func _menu_button(parent: Node, text: String) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.custom_minimum_size = Vector2(420, 62)
+	b.focus_mode = Control.FOCUS_NONE
+	b.add_theme_font_size_override("font_size", 26)
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.16, 0.11, 0.08, 0.92)
+	sb.set_corner_radius_all(14)
+	sb.border_color = Color("c9a46a")
+	sb.set_border_width_all(2)
+	var sbh := sb.duplicate() as StyleBoxFlat
+	sbh.bg_color = Color(0.32, 0.22, 0.14, 0.95)
+	b.add_theme_stylebox_override("normal", sb)
+	b.add_theme_stylebox_override("hover", sbh)
+	b.add_theme_stylebox_override("pressed", sbh)
+	b.add_theme_color_override("font_color", Color("f6e7c8"))
+	parent.add_child(b)
+	return b
+
+
+func _menu_box(root: Control) -> VBoxContainer:
+	var box := VBoxContainer.new()
+	box.position = Vector2(590, 150)
+	box.size = Vector2(420, 600)
+	box.add_theme_constant_override("separation", 14)
+	root.add_child(box)
+	return box
+
+
+func _menu_label(parent: Node, text: String, size: int, col: Color) -> Label:
+	var l := Label.new()
+	l.text = text
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.add_theme_font_size_override("font_size", size)
+	l.add_theme_color_override("font_color", col)
+	l.add_theme_color_override("font_outline_color", Color.BLACK)
+	l.add_theme_constant_override("outline_size", 6)
+	parent.add_child(l)
+	return l
+
+
+func _build_menu(has_save: bool) -> void:
+	menu_layer = CanvasLayer.new()
+	menu_layer.layer = 10
+	menu_layer.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(menu_layer)
+	var dim := ColorRect.new()
+	dim.color = Color(0.03, 0.02, 0.02, 0.72)
+	dim.size = Vector2(1600, 900)
+	menu_layer.add_child(dim)
+
+	menu_main = Control.new()
+	menu_main.size = Vector2(1600, 900)
+	menu_layer.add_child(menu_main)
+	var box := _menu_box(menu_main)
+	_menu_label(box, "TASO DÜKKÂNI", 56, Color("ffd36b"))
+	menu_stats = _menu_label(box, "", 18, Color(1, 1, 1, 0.8))
+	btn_continue = _menu_button(box, "Devam Et" if has_save else "Oyuna Başla")
+	btn_continue.pressed.connect(_close_menu)
+	btn_save = _menu_button(box, "Kaydet")
+	btn_save.pressed.connect(_on_save_pressed)
+	btn_new = _menu_button(box, "Yeni Oyun")
+	btn_new.pressed.connect(_on_new_game)
+	_menu_button(box, "Ayarlar").pressed.connect(_on_settings_pressed)
+	if not OS.has_feature("web"):
+		_menu_button(box, "Çıkış").pressed.connect(_on_quit_pressed)
+
+	menu_settings = Control.new()
+	menu_settings.size = Vector2(1600, 900)
+	menu_settings.visible = false
+	menu_layer.add_child(menu_settings)
+	var sbox := _menu_box(menu_settings)
+	_menu_label(sbox, "AYARLAR", 44, Color("ffd36b"))
+	_slider(sbox, "Fare hassasiyeti", 0.0005, 0.008, mouse_sens, func(v: float): mouse_sens = v)
+	_slider(sbox, "Dokunmatik hassasiyet", 0.001, 0.015, touch_sens, func(v: float): touch_sens = v)
+	_slider(sbox, "Ses", 0.0, 1.0, volume, _set_volume)
+	_menu_button(sbox, "Geri").pressed.connect(_on_settings_back)
+	menu_layer.visible = false
+
+
+func _on_save_pressed() -> void:
+	_write_save()
+	btn_save.text = "Kaydedildi"
+
+
+func _on_settings_pressed() -> void:
+	menu_main.visible = false
+	menu_settings.visible = true
+
+
+func _on_settings_back() -> void:
+	_save_settings()
+	menu_settings.visible = false
+	menu_main.visible = true
+
+
+func _on_quit_pressed() -> void:
+	_write_save()
+	get_tree().quit()
+
+
+func _set_volume(v: float) -> void:
+	volume = v
+	AudioServer.set_bus_volume_db(0, linear_to_db(maxf(v, 0.001)))
+
+
+func _slider(parent: Node, title: String, lo: float, hi: float, value: float, on_change: Callable) -> void:
+	_menu_label(parent, title, 20, Color(1, 1, 1, 0.85))
+	var sl := HSlider.new()
+	sl.min_value = lo
+	sl.max_value = hi
+	sl.step = (hi - lo) / 100.0
+	sl.value = value
+	sl.custom_minimum_size = Vector2(420, 36)
+	sl.focus_mode = Control.FOCUS_NONE
+	sl.value_changed.connect(on_change)
+	parent.add_child(sl)
+
+
+func _open_menu() -> void:
+	if menu_layer == null or menu_layer.visible:
+		return
+	menu_layer.visible = true
+	menu_main.visible = true
+	menu_settings.visible = false
+	new_confirm = false
+	btn_new.text = "Yeni Oyun"
+	btn_save.text = "Kaydet"
+	btn_save.visible = started
+	if started:
+		btn_continue.text = "Devam Et"
+	var s := int(elapsed)
+	menu_stats.text = "Doğru dizilen: %d / %d     Jeton: %d     Süre: %02d:%02d:%02d" % [correct, set_count * NUMBERS_PER_SET, coins, floori(s / 3600.0), floori(s / 60.0) % 60, s % 60]
+	get_tree().paused = true
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	if started and save_dirty:
+		_write_save()
+
+
+func _close_menu() -> void:
+	menu_layer.visible = false
+	get_tree().paused = false
+	started = true
+	capture_grace = 0.8
+	if not touch_mode:
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+func _on_new_game() -> void:
+	if not new_confirm:
+		new_confirm = true
+		btn_new.text = "Emin misin? Tüm ilerleme silinir"
+		return
+	if FileAccess.file_exists(SAVE_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
+	skip_menu = true
+	get_tree().paused = false
+	get_tree().reload_current_scene()
+
+
 # ---------------- HUD ----------------
 func _mk_label(parent: Node, pos: Vector2, size: int, col: Color) -> Label:
 	var l := Label.new()
@@ -1608,7 +1943,7 @@ func _build_hud() -> void:
 		help.text = "Sol taraf: yürü  •  Sağ taraf: sürükle bak, dokun al/koy\n< >: eldeki tasoyu seç  •  1-3: yetenek satın al"
 		_build_touch_ui(layer)
 	else:
-		help.text = "WASD yürü  •  Shift koş  •  Boşluk zıpla  •  Fare bak\nSol tık: taso al / yuvaya koy / dolu yuvadan geri al veya değiştir\nTekerlek: eldeki tasoyu seç\nQ: seçiliyi bırak  •  Sağ tık: hepsini bırak\n1-3: yetenek satın al  •  R: yeniden  •  Esc: fareyi bırak"
+		help.text = "WASD yürü  •  Shift koş  •  Boşluk zıpla  •  Fare bak\nSol tık: taso al / boş yuvaya koy / dolu yuvadakini eline al\nTekerlek: eldeki tasoyu seç\nQ: seçiliyi bırak  •  Sağ tık: hepsini bırak\n1-3: yetenek satın al  •  Esc: menü"
 
 
 func _taso_name(i: int) -> String:
@@ -1664,8 +1999,8 @@ func _update_hud() -> void:
 
 	hud_msg.text = message if message_time > 0.0 else ""
 	if finished:
-		hud_center.text = "TÜM VİTRİNLER TAMAM!\nSüre %02d:%02d  •  R ile yeniden başla" % [floori(s / 60.0), s % 60]
-	elif not touch_mode and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
-		hud_center.text = "Oynamak için tıkla"
+		hud_center.text = "TÜM VİTRİNLER TAMAM!\nSüre %02d:%02d  •  Yeni oyun için menüyü aç" % [floori(s / 60.0), s % 60]
+	elif false:
+		pass
 	else:
 		hud_center.text = ""
