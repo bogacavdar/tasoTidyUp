@@ -1,5 +1,7 @@
 # Taso Kaosu (çalışma adı)
 
+
+> **Şimdilik:** Yerde yalnızca ComfyUI + Z-Image Turbo ile çizilmiş **Kor Vadisi** setinin 150 tasosu var. 34 vitrinin hepsi duruyor; diğer setlerin çizimleri üretildikçe `ACTIVE_SETS` (main.gd) artırılıp eklenecek.
 Godot ile yapılan bir "kaostan düzene" toplu dizme oyunu. Oyuncu birinci şahıs bakışla, yere yığılmış binlerce tasoyu setlerine ve numaralarına göre vitrinlere diziyor, kazandığı puanlarla gelişim ağacında yetenek açıyor ve hızlanıyor.
 
 ## Şu anki durum: Taso dükkânı

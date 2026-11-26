@@ -106,7 +106,9 @@ const COIN_SPECIES := 2
 const COIN_SET := 25
 
 # ---------------- Durum ----------------
-var set_count := SETS.size()
+var set_count := SETS.size()        # vitrin sayısı (34)
+## Yerde olan setler: şimdilik yalnızca yeni çizimli Kor Vadisi. Diğer vitrinler boş bekler.
+const ACTIVE_SETS := 1
 var set_colors: Array[Color] = []
 var tasos: Array = []                 # Dictionary: grp, num
 var pile_xf: Array[Transform3D] = []  # yığındaki son konum
@@ -287,7 +289,8 @@ func _ready() -> void:
 	for k in set_count * (NUMBERS_PER_SET / 3):
 		species_paid.append(false)
 	_spawn_tasos(data)
-	idx_of_uid.resize(tasos.size())
+	idx_of_uid.resize(set_count * NUMBERS_PER_SET)
+	idx_of_uid.fill(-1)
 	for i in tasos.size():
 		idx_of_uid[_uid(tasos[i])] = i
 	_build_pile()
@@ -302,7 +305,7 @@ func _ready() -> void:
 	else:
 		tut_step = 0
 	_tut_show()
-	milestone = _milestone_for(float(correct) / (set_count * NUMBERS_PER_SET))
+	milestone = _milestone_for(float(correct) / maxf(tasos.size(), 1.0))
 	_build_menu(not data.is_empty())
 	if skip_menu:
 		skip_menu = false
@@ -1218,7 +1221,7 @@ func _spawn_tasos(data: Dictionary) -> void:
 				pile_count += 1
 		return
 	var pairs: Array = []
-	for g in set_count:
+	for g in ACTIVE_SETS:
 		for n in NUMBERS_PER_SET:
 			pairs.append(Vector2i(g, n + 1))
 	pairs.shuffle()
@@ -2244,7 +2247,7 @@ func _read_save() -> Dictionary:
 	if int(d.get("sets", 0)) != set_count or int(d.get("per_set", 0)) != NUMBERS_PER_SET:
 		return {}
 	var list: Array = d.get("tasos", [])
-	if list.size() != set_count * NUMBERS_PER_SET:
+	if list.size() != ACTIVE_SETS * NUMBERS_PER_SET:
 		return {}
 	return d
 
@@ -2616,7 +2619,7 @@ func _open_menu() -> void:
 	if started:
 		btn_continue.text = "Devam Et"
 	var s := int(elapsed)
-	menu_stats.text = "Doğru dizilen: %d / %d     Puan: %d     Süre: %02d:%02d:%02d" % [correct, set_count * NUMBERS_PER_SET, coins, floori(s / 3600.0), floori(s / 60.0) % 60, s % 60]
+	menu_stats.text = "Doğru dizilen: %d / %d     Puan: %d     Süre: %02d:%02d:%02d" % [correct, tasos.size(), coins, floori(s / 3600.0), floori(s / 60.0) % 60, s % 60]
 	get_tree().paused = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	if started and save_dirty:
@@ -2694,7 +2697,7 @@ func _taso_name(i: int) -> String:
 
 
 func _update_hud() -> void:
-	var total := set_count * NUMBERS_PER_SET
+	var total := tasos.size()
 	var s := int(elapsed)
 	hud_stats.text = "Puan: %d      Doğru: %d/%d      Vitrinde: %d      Yerde: %d      Süre: %02d:%02d" % [coins, correct, total, placed, pile_count, floori(s / 60.0), s % 60]
 
@@ -2886,7 +2889,7 @@ func _milestone_for(p: float) -> int:
 
 
 func _update_order(delta: float) -> void:
-	var p := float(correct) / float(set_count * NUMBERS_PER_SET)
+	var p := float(correct) / maxf(tasos.size(), 1.0)
 	if order_vis < 0.0:
 		order_vis = p
 	order_vis = move_toward(order_vis, p, delta * 0.03)
@@ -3052,7 +3055,7 @@ func _album_show(g: int) -> void:
 	var got := 0
 	for n in NUMBERS_PER_SET:
 		var i: int = idx_of_uid[g * NUMBERS_PER_SET + n]
-		var open: bool = paid[i]
+		var open: bool = i != -1 and paid[i]
 		if open:
 			got += 1
 		var tr: TextureRect = album_cells[n]
@@ -3101,8 +3104,8 @@ func _album_back() -> void:
 # ---------------- İlk açılış rehberi ----------------
 ## Her adım: [bilgisayar metni, dokunmatik metni]
 const TUT := [
-	["Yerdeki tasolar 34 farklı sete ait. Bir tasoya bak ve sol tıkla: eline alırsın.",
-		"Yerdeki tasolar 34 farklı sete ait. Ekranın sağ tarafında bir tasoya dokun: eline alırsın."],
+	["Yerdeki tasolar dükkânın setlerine ait. Bir tasoya bak ve sol tıkla: eline alırsın.",
+		"Yerdeki tasolar dükkânın setlerine ait. Ekranın sağ tarafında bir tasoya dokun: eline alırsın."],
 	["Fare tekerleğiyle eldeki tasolar arasında geç. Seçili taso en önde durur.",
 		"< > butonlarıyla eldeki tasolar arasında geç. Seçili taso en önde durur."],
 	["Her setin bir vitrini var; vitrin başlığının rengi tasonun rengiyle aynı. Seçili tasonun vitrinini bul ve ona bak.",
