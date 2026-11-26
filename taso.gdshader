@@ -1,7 +1,7 @@
 shader_type spatial;
 
-// Taso: ince bir set rengi kenar; yüzünü neredeyse tamamen kaplayan canlı resmi (setin
-// atlasından, tools/gen_creatures.py ile üretilmiş) ve altta küçük numara.
+// Taso: kenarsız; canlı resmi (setin atlasından) yüzü tamamen kaplar, kenarda yalnızca ince koyu
+// bir kabartma çizgisi var. Numara üstte, koyu yarı saydam etiket üstünde beyaz ve okunaklı.
 //
 // Her setin kendi malzemesi ve atlası var: assets/art/set_XX.jpg (13 x 12 hücre, hücre i = numara i+1).
 // INSTANCE_CUSTOM: x = benzersiz taso id (set * nper + numara - 1), y = holo (0/1)
@@ -15,7 +15,7 @@ uniform float nper = 150.0;
 uniform float rows = 5.0;
 uniform float radius = 0.12;
 
-const float DISC = 0.465;      // resmin kapladığı daire (uv yarıçapı, kenar 0.5)
+const float DISC = 0.488;      // resmin kapladığı daire (uv yarıçapı, kenar 0.5)
 
 varying vec2 face_uv;
 varying float face;
@@ -68,13 +68,29 @@ float aa(float d) {
 
 // ---------------- Taso yüzü ----------------
 void fragment() {
-	vec3 base = COLOR.rgb;
+	// kenar ve yan yüz: koyu, set rengi yok
+	vec3 base = vec3(0.07, 0.065, 0.06);
 	float holo = inst.y;
-	if (abs(face) > 0.5) {
+	if (face < -0.5) {
+		// arka yüz: bütün tasolarda aynı. Koyu kırmızı zemin, ışınlar, altın halkalar ve yıldız.
+		vec2 p = vec2(1.0 - face_uv.x, face_uv.y) - 0.5;
+		float d = length(p);
+		float a = atan(p.y, p.x);
+		vec3 col = mix(vec3(0.5, 0.07, 0.06), vec3(0.16, 0.025, 0.03), smoothstep(0.0, 0.5, d));
+		float ray = step(0.5, fract(a * 16.0 / 6.2831853));
+		col = mix(col, col * 1.35, ray * 0.4 * (1.0 - smoothstep(0.12, 0.42, d)));
+		vec3 gold = vec3(0.93, 0.72, 0.32);
+		col = mix(col, gold, aa(abs(d - 0.455) - 0.014));
+		col = mix(col, gold, aa(abs(d - 0.41) - 0.004));
+		float dots = aa(length(vec2(fract(a * 24.0 / 6.2831853) - 0.5, (d - 0.36) * 24.0 / 6.2831853 * 6.0)) * 0.02 - 0.004);
+		col = mix(col, gold, dots * aa(abs(d - 0.36) - 0.02));
+		float star_r = 0.075 + 0.075 * pow(0.5 + 0.5 * cos(5.0 * (a + 1.5708)), 2.0);
+		col = mix(col, gold * 0.75, aa(d - star_r - 0.012));
+		col = mix(col, gold * 1.08, aa(d - star_r));
+		col = mix(col, gold, aa(abs(d - 0.2) - 0.005));
+		base = mix(base, col, 1.0 - smoothstep(0.492, 0.5, d));
+	} else if (face > 0.5) {
 		vec2 uv = face_uv;
-		if (face < 0.0) {
-			uv.x = 1.0 - uv.x;
-		}
 		float d = length(uv - 0.5);
 		float disc = 1.0 - smoothstep(DISC - 0.006, DISC + 0.004, d);
 
@@ -90,19 +106,18 @@ void fragment() {
 			vec2 cuv = clamp((uv - 0.5) / (2.0 * DISC) + 0.5, 0.012, 0.988);
 			pic = texture(art, (cxy + cuv) / vec2(art_cols, art_rows)).rgb;
 		}
-		// kenar kararması
-		pic *= mix(1.0, 0.86, smoothstep(DISC - 0.12, DISC, d));
+		// kenara doğru hafif kararma ve ince kabartma çizgisi
+		pic *= mix(1.0, 0.8, smoothstep(DISC - 0.06, DISC, d));
 		base = mix(base, pic, disc);
-		// ince kenar: kabartma çizgisi
-		base = mix(base, base * 0.55, smoothstep(0.008, 0.0, abs(d - DISC - 0.002)) * 0.8);
-		base = mix(base, min(base * 1.3 + 0.05, vec3(1.0)), smoothstep(0.008, 0.0, abs(d - 0.485)) * 0.6);
+		base = mix(base, min(base * 1.25 + 0.04, vec3(1.0)), smoothstep(0.006, 0.0, abs(d - (DISC - 0.008))) * 0.35);
 
-		// altta küçük numara, yarı saydam etiket üstünde
-		vec2 nc = vec2(0.5, 0.885);
-		float pill = max(abs(uv.x - nc.x) - 0.07, abs(uv.y - nc.y) - 0.038);
-		base = mix(base, mix(base, vec3(1.0), 0.85), aa(pill) * disc);
-		float ink = draw_number(uv, num, nc, 0.05, 0.075);
-		base = mix(base, vec3(0.08), ink * disc);
+		// üstte numara: koyu yarı saydam etiket, beyaz rakamlar
+		vec2 nc = vec2(0.5, 0.13);
+		float pill = max(abs(uv.x - nc.x) - 0.085, abs(uv.y - nc.y) - 0.05);
+		float pr = length(max(vec2(abs(uv.x - nc.x) - 0.06, abs(uv.y - nc.y) - 0.025), 0.0)) - 0.025;
+		base = mix(base, base * 0.25, aa(pr) * 0.78 * disc);
+		float ink = draw_number(uv, num, nc, 0.058, 0.085);
+		base = mix(base, vec3(1.0), ink * disc);
 	}
 	if (holo > 0.5) {
 		float h = fract(TIME * 0.3 + face_uv.x * 0.8 + face_uv.y * 0.5);

@@ -1360,6 +1360,85 @@ func _put_in_pile(i: int, xf: Transform3D) -> void:
 	_grid_add(i)
 
 
+func _throw(i: int, k: int, n: int, fwd: Vector3, cb: Basis) -> void:
+	if taso_phys == null:
+		taso_phys = PhysicsMaterial.new()
+		taso_phys.bounce = 0.35
+		taso_phys.friction = 0.75
+	var body := RigidBody3D.new()
+	body.mass = 0.02
+	body.collision_layer = FLY_LAYER
+	body.collision_mask = 1 | FLY_LAYER
+	body.continuous_cd = true
+	body.physics_material_override = taso_phys
+	body.angular_damp = 0.4
+	var cs := CollisionShape3D.new()
+	var sh := CylinderShape3D.new()
+	sh.radius = TASO_R
+	sh.height = maxf(TASO_H, 0.012)
+	cs.shape = sh
+	body.add_child(cs)
+	add_child(body)
+	# elden çıkış: tasonun yüzü kameraya dönük, birden fazlaysa hafif dağınık
+	var right := cb.x
+	var start := cam.global_position + fwd * 0.45 + right * 0.18 - cb.y * 0.18
+	start += right * randf_range(-0.08, 0.08) * minf(n, 6) + cb.y * randf_range(-0.04, 0.04) * minf(n, 6)
+	var b := cb * Basis(Vector3.RIGHT, PI / 2)
+	body.global_transform = Transform3D(b, start)
+	var spd := randf_range(2.6, 4.2) if n == 1 else randf_range(2.0, 4.0)
+	body.linear_velocity = fwd * spd + Vector3.UP * randf_range(0.8, 1.8) + right * randf_range(-0.6, 0.6) + player.velocity * 0.5
+	# takla (ters düşme şansı) + kendi ekseninde dönüş
+	body.angular_velocity = right * randf_range(-16.0, 16.0) + body.global_transform.basis.y * randf_range(-8.0, 8.0) + fwd * randf_range(-4.0, 4.0)
+	flying.append({"i": i, "body": body, "t": 0.0, "slow": 0.0})
+	_pile_xf(i, body.global_transform)
+
+
+func _update_flying(delta: float) -> void:
+	for k in range(flying.size() - 1, -1, -1):
+		var e: Dictionary = flying[k]
+		var body: RigidBody3D = e["body"]
+		var i: int = e["i"]
+		e["t"] = float(e["t"]) + delta
+		var xf := body.global_transform
+		_pile_xf(i, xf)
+		if body.linear_velocity.length() < 0.05 and body.angular_velocity.length() < 0.4:
+			e["slow"] = float(e["slow"]) + delta
+		else:
+			e["slow"] = 0.0
+		if body.sleeping or float(e["slow"]) > 0.35 or float(e["t"]) > 6.0 or xf.origin.y < -3.0:
+			_land(k)
+
+
+func _land(k: int) -> void:
+	var e: Dictionary = flying[k]
+	var body: RigidBody3D = e["body"]
+	var i: int = e["i"]
+	var xf := body.global_transform.orthonormalized()
+	if xf.origin.y < -3.0:
+		xf = Transform3D(Basis(Vector3.UP, randf() * TAU), _random_floor_pos())
+	else:
+		# zemine gömülmesin: altındaki yüzeye otur
+		var q := PhysicsRayQueryParameters3D.create(xf.origin + Vector3.UP * 0.4, xf.origin + Vector3.DOWN * 0.6)
+		q.collision_mask = 1
+		q.exclude = [body.get_rid()]
+		var hit := get_world_3d().direct_space_state.intersect_ray(q)
+		if not hit.is_empty():
+			var top: float = hit["position"].y + TASO_H * 0.5 + 0.002
+			if xf.origin.y < top:
+				xf.origin.y = top
+	flying.remove_at(k)
+	body.queue_free()
+	_put_in_pile(i, xf)
+	if float(e["t"]) < 6.0:
+		_play(snd_drop)
+
+
+## Kayıt ya da büyü öncesi: havadaki bütün tasoları olduğu yerde indir
+func _land_all() -> void:
+	for k in range(flying.size() - 1, -1, -1):
+		_land(k)
+
+
 func _grab_count() -> int:
 	return AVUC_GRAB[_lvl("avuc")]
 
@@ -1398,6 +1477,8 @@ func _physics_process(delta: float) -> void:
 		player.velocity.y -= GRAVITY * delta
 	player.move_and_slide()
 	_footsteps(delta)
+	if not flying.is_empty():
+		_update_flying(delta)
 	if player.global_position.y < -5.0:
 		player.global_position = Vector3(0, 1.0, ROOM_D / 2.0 - 3.0)
 	cam.fov = lerpf(cam.fov, 82.0 if (sprint and mv != Vector2.ZERO) else 75.0, 8.0 * delta)
@@ -1626,6 +1707,7 @@ func _find_target() -> Dictionary:
 				best_t = t
 				res = {"kind": "taso", "idx": i, "point": o + d * t}
 	var q := PhysicsRayQueryParameters3D.create(o, o + d * REACH)
+	q.collision_mask = 0xFFFFFFFF & ~FLY_LAYER
 	q.exclude = [player.get_rid()]
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
 	if not hit.is_empty():
@@ -1815,25 +1897,18 @@ func _check_shelf(g: int) -> void:
 
 
 ## only_selected: Q yalnızca seçili tasoyu, sağ tık hepsini bırakır.
+## Elden fırlat: her taso dönerek uçan bir fizik cismi olur; sekip durduğu yerde (ters ya da düz) kalır.
 func _drop(only_selected: bool) -> void:
 	if hand.is_empty():
 		return
 	var list: Array = [hand[sel]] if only_selected else hand.duplicate()
-	var pt := player.global_position - player.global_transform.basis.z * 1.0
-	pt.y = player.global_position.y - 0.95
-	var kind: String = target.get("kind", "")
-	if kind == "taso" or kind == "floor":
-		pt = target["point"]
-	var spread := 0.12 * sqrt(float(list.size()))
+	var cb := cam.global_transform.basis
+	var fwd := -cb.z
 	for k in list.size():
 		var i: int = list[k]
-		var off := Vector3.ZERO if k == 0 else Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)) * spread
-		var pos := pt + off
-		pos.y = maxf(pt.y, 0.0) + BASE_Y + k * TASO_H * 0.5
-		var b := Basis(Vector3.UP, randf() * TAU) * Basis(Vector3.RIGHT, randf_range(-0.25, 0.25))
-		_put_in_pile(i, Transform3D(b, pos))
 		hand.erase(i)
-	_play(snd_drop)
+		_throw(i, k, list.size(), fwd, cb)
+	_play(snd_pick)
 	sel = clampi(sel, 0, maxi(hand.size() - 1, 0))
 	_rebuild_hand()
 
@@ -2258,6 +2333,7 @@ func _read_save() -> Dictionary:
 func _write_save() -> void:
 	if not started and tasos.is_empty():
 		return
+	_land_all()
 	var list: Array = []
 	for i in tasos.size():
 		var t: Dictionary = tasos[i]
@@ -3223,6 +3299,10 @@ var fabric_nrm: NoiseTexture2D
 var props_blocked: Array = []        # [Rect2 (x,z), kat yüksekliği]
 var last_prop_size := Vector3.ZERO
 var fans: Array = []
+# Fırlatılan tasolar: gerçek fizik cismi olarak uçar, durunca yere (pile) geçer
+const FLY_LAYER := 8
+var flying: Array = []                 # [{"i": taso, "body": RigidBody3D, "t": süre}]
+var taso_phys: PhysicsMaterial
 const MODEL_FIX := {"steel_frame_shelves_01": [0.1, 0.0], "wooden_display_shelves_01": [1.0, PI / 2]}
 
 
