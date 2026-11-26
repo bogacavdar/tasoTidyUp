@@ -1,10 +1,11 @@
-# Poly Haven (CC0) doku kimlikleri. tools/fetch_textures.py bunları 1K JPG olarak assets/tex/ içine indirir.
-# Bulunamayan kimlikler atlanır; oyun o yüzeyde düz renk kullanır.
-diagonal_parquet
-beige_wall_001
-dark_wood
-fine_grained_wood
+# Poly Haven (CC0) doku kimlikleri. tools/fetch_textures.py bunları JPG olarak assets/tex/ içine indirir.
+# "<id> 2k": geniş yüzeyler için 2K, yoksa 1K. Bulunamayan kimlikler atlanır; oyun o yüzeyde düz renk kullanır.
+diagonal_parquet 2k
+beige_wall_001 2k
+dark_wood 2k
+fine_grained_wood 2k
 wood_planks
 concrete_floor_02
 asphalt_02
 marble_01
+velour_velvet

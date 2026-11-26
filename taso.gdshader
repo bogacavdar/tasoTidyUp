@@ -7,7 +7,7 @@ shader_type spatial;
 // INSTANCE_CUSTOM: x = benzersiz taso id (set * nper + numara - 1), y = holo (0/1)
 // Rakam atlası: 10 sütun x 'rows' satır, hücre 128x64. Satır 0: rakamlar 0-9.
 uniform sampler2D atlas : source_color, filter_linear;
-uniform sampler2D art : source_color, filter_linear_mipmap;
+uniform sampler2D art : source_color, filter_linear_mipmap_anisotropic;
 uniform bool has_art = false;
 uniform float art_cols = 13.0;
 uniform float art_rows = 12.0;
@@ -20,11 +20,13 @@ const float DISC = 0.488;      // resmin kapladığı daire (uv yarıçapı, ken
 varying vec2 face_uv;
 varying float face;
 varying vec4 inst;
+varying vec3 wpos;
 
 void vertex() {
 	face_uv = VERTEX.xz / (2.0 * radius) + 0.5;
 	face = NORMAL.y;
 	inst = INSTANCE_CUSTOM;
+	wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 }
 
 // ---------------- Rakamlar ----------------
@@ -70,6 +72,7 @@ float aa(float d) {
 void fragment() {
 	// kenar ve yan yüz: koyu, set rengi yok
 	vec3 base = vec3(0.07, 0.065, 0.06);
+	float gloss = 0.0;
 	float holo = inst.y;
 	if (face < -0.5) {
 		// arka yüz: bütün tasolarda aynı. Koyu kırmızı zemin, ışınlar, altın halkalar ve yıldız.
@@ -118,6 +121,13 @@ void fragment() {
 		base = mix(base, base * 0.25, aa(pr) * 0.78 * disc);
 		float ink = draw_number(uv, num, nc, 0.058, 0.085);
 		base = mix(base, vec3(1.0), ink * disc);
+
+		// cilalı baskı: bakış açısıyla yüzeyde kayan ince bir parıltı ve kenarlara doğru yansıma
+		vec3 r = reflect(-VIEW, NORMAL);
+		float band = sin(r.x * 7.0 + r.y * 5.0 + (wpos.x + wpos.z) * 9.0 + (uv.x + uv.y) * 2.5);
+		float glint = smoothstep(0.86, 1.0, band) * 0.22 + smoothstep(0.6, 1.0, band) * 0.05;
+		float fres = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 4.0);
+		gloss = (glint + fres * 0.18) * disc;
 	}
 	if (holo > 0.5) {
 		float h = fract(TIME * 0.3 + face_uv.x * 0.8 + face_uv.y * 0.5);
@@ -126,7 +136,9 @@ void fragment() {
 		EMISSION = rainbow * 0.3;
 	}
 	ALBEDO = base;
-	ROUGHNESS = holo > 0.5 ? 0.22 : 0.45;
-	METALLIC = holo > 0.5 ? 0.45 : 0.0;
-	SPECULAR = 0.5;
+	EMISSION += vec3(1.0, 0.98, 0.94) * gloss;
+	// ön yüz cilalı (parlak), kenar ve arka yüz daha mat
+	ROUGHNESS = face > 0.5 ? 0.24 : 0.45;
+	METALLIC = 0.0;
+	SPECULAR = face > 0.5 ? 0.7 : 0.5;
 }

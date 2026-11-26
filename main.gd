@@ -269,6 +269,10 @@ var new_confirm := false
 var capture_grace := 0.0
 
 var hud_stats: Label
+var hud_cards := {}                     # kart adı -> değer etiketi
+var hud_card_panels := {}
+var hud_progress: ProgressBar
+var hud_last_coins := -1
 var hud_info: Label
 var hud_hand: Label
 var hud_msg: Label
@@ -471,13 +475,17 @@ func _make_env_materials() -> void:
 	mat_paint = _mat(Color("f1ece2"))
 	var has_wood := mat_wood.albedo_texture != null
 	# vitrin fonu kadife: lacivert; tamamlanınca koyu yeşil
-	board_tint = Color(0.075, 0.095, 0.15)
-	board_done_tint = Color(0.06, 0.17, 0.1)
+	board_tint = Color(0.17, 0.21, 0.36)
+	board_done_tint = Color(0.09, 0.25, 0.15)
 	glass_mat = StandardMaterial3D.new()
 	glass_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	glass_mat.albedo_color = Color(0.85, 0.95, 1.0, 0.1)
 	glass_mat.roughness = 0.05
 	glass_mat.metallic = 0.3
+	vglass_mat = ShaderMaterial.new()
+	var vgs := Shader.new()
+	vgs.code = VGLASS_SHADER
+	vglass_mat.shader = vgs
 	led_mat = StandardMaterial3D.new()
 	led_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	led_mat.albedo_color = Color("fff3d6")
@@ -730,6 +738,7 @@ func _build_world() -> void:
 	_build_stairs(STAIR_X)
 	_build_interior_finish()
 	_furnish()
+	_shop_decor()
 
 	# --- Ortak çoklu çizimler: yuva halkaları, raf çıtaları, vitrindeki tasolar ---
 	var total := set_count * NUMBERS_PER_SET
@@ -751,6 +760,22 @@ func _build_world() -> void:
 	ring_mat.roughness = 0.32
 	ring_mmi.material_override = ring_mat
 	add_child(ring_mmi)
+
+	var rq := QuadMesh.new()
+	rq.size = Vector2(TASO_R * 2.5, TASO_R * 2.5)
+	recess_mm = MultiMesh.new()
+	recess_mm.transform_format = MultiMesh.TRANSFORM_3D
+	recess_mm.mesh = rq
+	recess_mm.instance_count = total
+	var rmi := MultiMeshInstance3D.new()
+	rmi.multimesh = recess_mm
+	var rsm := ShaderMaterial.new()
+	var rsh := Shader.new()
+	rsh.code = RECESS_SHADER
+	rsm.shader = rsh
+	rmi.material_override = rsm
+	rmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(rmi)
 
 	var lip_mesh := BoxMesh.new()
 	lip_mesh.size = Vector3(SLOT_COLS * SLOT_GAP + 0.2, 0.018, 0.08)
@@ -920,6 +945,51 @@ func _window(center: Vector3, size: Vector2, rot: float) -> void:
 	_mesh_box(node, Vector3(t, size.y, 0.08), Vector3(size.x / 2 + t / 2, 0, 0.03), fm)
 	_mesh_box(node, Vector3(0.05, size.y, 0.05), Vector3(0, 0, 0.02), fm)
 	_mesh_box(node, Vector3(size.x, 0.05, 0.05), Vector3(0, 0, 0.02), fm)
+	_light_shaft(node, size)
+
+
+func _light_shaft(node: Node3D, size: Vector2) -> void:
+	if sun == null:
+		return
+	var dir := -sun.transform.basis.z.normalized()
+	var inward := node.transform.basis.z.normalized()
+	if dir.dot(inward) < 0.15 or dir.y > -0.05:
+		return
+	if shaft_mat == null:
+		shaft_mat = ShaderMaterial.new()
+		var sh := Shader.new()
+		sh.code = SHAFT_SHADER
+		shaft_mat.shader = sh
+	var c := node.position
+	# zemin: üst kattaki pencereden düşen ışık asma katın üstüne düşer
+	var floor_y := 0.0
+	var probe := c + dir * (c.y / -dir.y)
+	if c.y > MEZZ_Y + 1.0 and probe.z < MEZZ_EDGE_Z:
+		floor_y = MEZZ_Y
+	var right := node.transform.basis.x * (size.x / 2.0)
+	var up := Vector3.UP * (size.y / 2.0)
+	var corners := [c - right + up, c + right + up, c + right - up, c - right - up]
+	var ends: Array = []
+	for k in 4:
+		var p: Vector3 = corners[k]
+		var l := minf((p.y - floor_y) / -dir.y, 16.0)
+		ends.append(p + dir * l)
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for k in 4:
+		var a: Vector3 = corners[k]
+		var b: Vector3 = corners[(k + 1) % 4]
+		var a2: Vector3 = ends[k]
+		var b2: Vector3 = ends[(k + 1) % 4]
+		for v in [[a, 0.0, 0.0], [b, 1.0, 0.0], [b2, 1.0, 1.0], [a, 0.0, 0.0], [b2, 1.0, 1.0], [a2, 0.0, 1.0]]:
+			st.set_uv(Vector2(v[1], v[2]))
+			st.add_vertex(v[0])
+	st.generate_normals()
+	var mi := MeshInstance3D.new()
+	mi.mesh = st.commit()
+	mi.material_override = shaft_mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mi)
 
 
 ## Bir merdiven kolu: verilen x'te, zemin kattan (z = STAIR_Z0) asma kat kenarına (z = MEZZ_EDGE_Z) çıkar.
@@ -1085,6 +1155,11 @@ func _build_vitrine(g: int, pos: Vector3, rot: float) -> void:
 	board_m.normal_texture = _fabric_normal()
 	board_m.normal_scale = 0.6
 	board_m.uv1_scale = Vector3(4, 6, 1)
+	var vel_n := _tex("velour_velvet", "nor")
+	if vel_n != null:
+		board_m.normal_texture = vel_n
+		board_m.normal_scale = 1.0
+		board_m.uv1_scale = Vector3(2, 3, 1)
 	var back := _box(shelf, Vector3(w, h, 0.1), Vector3(0, BOARD_Y, 0), BOARD_COLOR, "shelf", board_m)
 	back.set_meta("grp", g)
 	board_mats.append(board_m)
@@ -1123,7 +1198,35 @@ func _build_vitrine(g: int, pos: Vector3, rot: float) -> void:
 	else:
 		shelf_lights.append(null)
 	_mesh_box(shelf, Vector3(w, 0.025, 0.03), Vector3(0, top_y - 0.03, depth - 0.12), lm)
-	_mesh_box(shelf, Vector3(w, h, 0.012), Vector3(0, BOARD_Y, depth - 0.06), glass_mat)
+	var gl := _mesh_box(shelf, Vector3(w, h, 0.012), Vector3(0, BOARD_Y, depth - 0.06), vglass_mat)
+	gl.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# LED'in kadifeye vuran ışığı: üstten aşağı sönen yumuşak bir aydınlık
+	var wm := StandardMaterial3D.new()
+	wm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	wm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	wm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	wm.no_depth_test = false
+	var wg := GradientTexture2D.new()
+	wg.width = 8
+	wg.height = 128
+	wg.fill_from = Vector2(0.5, 0.0)
+	wg.fill_to = Vector2(0.5, 1.0)
+	var wgr := Gradient.new()
+	wgr.set_color(0, Color(1, 1, 1, 1))
+	wgr.set_color(1, Color(1, 1, 1, 0))
+	wgr.add_point(0.35, Color(1, 1, 1, 0.35))
+	wg.gradient = wgr
+	wm.albedo_texture = wg
+	wm.albedo_color = Color(1.0, 0.85, 0.6, 0.0)
+	var wq := QuadMesh.new()
+	wq.size = Vector2(w - 0.04, h * 0.75)
+	var wmi := MeshInstance3D.new()
+	wmi.mesh = wq
+	wmi.material_override = wm
+	wmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	wmi.position = Vector3(0, top_y - 0.15 - h * 0.375, 0.054)
+	shelf.add_child(wmi)
+	wash_mats.append(wm)
 	# camın üstündeki toz: vitrin doğru doldukça silinir
 	var dm := StandardMaterial3D.new()
 	dm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -1153,6 +1256,7 @@ func _build_vitrine(g: int, pos: Vector3, rot: float) -> void:
 		var sp := _slot_local(n)
 		ring_mm.set_instance_transform(g * NUMBERS_PER_SET + n, shelf.global_transform * Transform3D(Basis(Vector3.RIGHT, PI / 2), sp + Vector3(0, 0, 0.002)))
 		ring_mm.set_instance_color(g * NUMBERS_PER_SET + n, RING_EMPTY)
+		recess_mm.set_instance_transform(g * NUMBERS_PER_SET + n, shelf.global_transform * Transform3D(Basis(), sp + Vector3(0, 0, 0.0012)))
 		row_slots.append(-1)
 	slots.append(row_slots)
 	shelf_done.append(false)
@@ -1556,7 +1660,7 @@ func _physics_process(delta: float) -> void:
 	var fov_target := 82.0 if (sprint and mv != Vector2.ZERO) else 75.0
 	if zooming:
 		fov_target = ZOOM_FOV
-	cam.fov = lerpf(cam.fov, fov_target, 12.0 * delta)
+	cam.fov = lerpf(cam.fov, fov_target - fov_kick, 12.0 * delta)
 	target = _find_target()
 	_update_hover()
 
@@ -1598,6 +1702,7 @@ func _process(delta: float) -> void:
 			_refresh_glow()
 	_update_compass()
 	_update_place_anims(delta)
+	_update_celebrations(delta)
 	_update_drag()
 	_update_guide(delta)
 	_update_order(delta)
@@ -2208,12 +2313,15 @@ func _rebuild_hand() -> void:
 		if rel == 0:
 			xf = Transform3D(Basis().scaled(Vector3.ONE * 1.25), Vector3(0, 0.06, 0.02))
 		else:
-			var a := absi(rel)
+			# yelpaze: seçilinin iki yanında bir yay üstünde, kenara doğru alçalıp dönerek açılır
+			var a := mini(absi(rel), 6)
 			var side := 1.0 if rel > 0 else -1.0
-			var pos := Vector3(side * (0.05 + a * 0.022), -0.004 * a, -0.01 * a)
-			if a > 8:
-				pos = Vector3(side * 0.24, -0.04, -0.09)
-			xf = Transform3D(Basis(Vector3.FORWARD, -side * 0.08 * a).scaled(Vector3.ONE * 0.85), pos)
+			var th := side * (0.2 + 0.15 * (a - 1))
+			var rad := 0.3
+			var pos := Vector3(sin(th) * rad, -0.006 * a, (1.0 - cos(th)) * rad + 0.01)
+			if absi(rel) > 6:
+				pos.y -= 0.004
+			xf = Transform3D(Basis(Vector3.UP, -th).scaled(Vector3.ONE * 0.9), pos)
 		var g: int = tasos[i]["grp"]
 		var mm: MultiMesh = hand_mms[g]
 		var j: int = hand_used[g]
@@ -3092,6 +3200,8 @@ func _build_hud() -> void:
 	dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(dot)
 	hud_stats = _mk_label(layer, Vector2(20, 14), 22, Color("ffd36b"))
+	hud_stats.visible = false
+	_build_hud_cards(layer)
 	hud_info = _mk_label(layer, Vector2(500, 470), 22, Color.WHITE)
 	hud_info.size = Vector2(600, 30)
 	hud_info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -3101,7 +3211,7 @@ func _build_hud() -> void:
 	hud_center = _mk_label(layer, Vector2(300, 250), 40, Color("ffd36b"))
 	hud_center.size = Vector2(1000, 120)
 	hud_center.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	hud_hand = _mk_label(layer, Vector2(20, 50), 18, Color(1, 1, 1, 0.9))
+	hud_hand = _mk_label(layer, Vector2(20, 92), 18, Color(1, 1, 1, 0.9))
 	hud_skills = _mk_label(layer, Vector2(20, 760), 17, Color(1, 1, 1, 0.9))
 	var help := _mk_label(layer, Vector2(1040, 14), 14, Color(1, 1, 1, 0.6))
 	if touch_mode:
@@ -3110,7 +3220,157 @@ func _build_hud() -> void:
 		_build_touch_ui(layer)
 	_build_tutorial(layer)
 	if not touch_mode:
-		help.text = "WASD yürü  •  Shift koş  •  Boşluk zıpla  •  Fare bak\nSol tık: taso al / boş yuvaya koy / dolu yuvadakini eline al  •  Basılı tutup sürükle: yuvadaki tasoyu taşı\nTekerlek: eldeki tasoyu seç\nQ: seçiliyi fırlat  •  Shift+Q: hepsini fırlat  •  Sağ tık (basılı): yakınlaştır\nTab: gelişim ağacı  •  B: albüm  •  Z/F/G/C: büyüler  •  Esc: menü"
+		help.text = "WASD yürü  •  Shift koş  •  Boşluk zıpla  •  Fare bak\nSol tık: taso al / boş yuvaya koy / dolu yuvadakini eline al\nSol tık basılı tutup sürükle: yuvadaki tasoyu taşı\nTekerlek: eldeki tasoyu seç\nQ: seçiliyi fırlat  •  Shift+Q: hepsini fırlat  •  Sağ tık (basılı): yakınlaştır\nTab: gelişim ağacı  •  B: albüm  •  Z/F/G/C: büyüler  •  Esc: menü"
+
+
+## Üstteki bilgi satırı: ikonlu küçük kartlar
+func _build_hud_cards(layer: CanvasLayer) -> void:
+	var row := HBoxContainer.new()
+	row.position = Vector2(14, 10)
+	row.add_theme_constant_override("separation", 8)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(row)
+	var defs := [["puan", "coin", "PUAN"], ["seri", "fire", "SERİ"], ["dogru", "check", "DOĞRU"], ["vitrin", "shelf", "VİTRİNDE"],
+		["yerde", "pile", "YERDE"], ["sure", "clock", "SÜRE"]]
+	for d in defs:
+		var pc := PanelContainer.new()
+		pc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = Color(0.09, 0.065, 0.05, 0.78)
+		sb.set_corner_radius_all(10)
+		sb.border_color = Color(0.85, 0.66, 0.36, 0.55)
+		sb.set_border_width_all(1)
+		sb.content_margin_left = 10
+		sb.content_margin_right = 12
+		sb.content_margin_top = 5
+		sb.content_margin_bottom = 5
+		pc.add_theme_stylebox_override("panel", sb)
+		row.add_child(pc)
+		var hb := HBoxContainer.new()
+		hb.add_theme_constant_override("separation", 8)
+		hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		pc.add_child(hb)
+		var ic := TextureRect.new()
+		ic.texture = _hud_icon(d[1])
+		ic.custom_minimum_size = Vector2(30, 30)
+		ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		ic.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		hb.add_child(ic)
+		var vb := VBoxContainer.new()
+		vb.add_theme_constant_override("separation", -2)
+		vb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		hb.add_child(vb)
+		var t := Label.new()
+		t.text = d[2]
+		t.add_theme_font_size_override("font_size", 11)
+		t.add_theme_color_override("font_color", Color(0.85, 0.75, 0.6, 0.85))
+		vb.add_child(t)
+		var v := Label.new()
+		v.add_theme_font_size_override("font_size", 21)
+		v.add_theme_color_override("font_color", Color("ffe2a0"))
+		v.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.6))
+		v.add_theme_constant_override("outline_size", 4)
+		vb.add_child(v)
+		if d[0] == "dogru":
+			hud_progress = ProgressBar.new()
+			hud_progress.show_percentage = false
+			hud_progress.custom_minimum_size = Vector2(96, 5)
+			var bg := StyleBoxFlat.new()
+			bg.bg_color = Color(1, 1, 1, 0.12)
+			bg.set_corner_radius_all(3)
+			var fg := StyleBoxFlat.new()
+			fg.bg_color = Color("3fe06a")
+			fg.set_corner_radius_all(3)
+			hud_progress.add_theme_stylebox_override("background", bg)
+			hud_progress.add_theme_stylebox_override("fill", fg)
+			hud_progress.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			vb.add_child(hud_progress)
+		hud_cards[d[0]] = v
+		hud_card_panels[d[0]] = pc
+
+
+## Kartların küçük ikonları: kod içinde çiziliyor (dış dosya gerekmez)
+func _hud_icon(kind: String) -> ImageTexture:
+	var n := 48
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	var gold := Color("f2c45a")
+	for y in n:
+		for x in n:
+			var p := (Vector2(x, y) + Vector2(0.5, 0.5)) / n - Vector2(0.5, 0.5)
+			var col := Color(0, 0, 0, 0)
+			var d := p.length()
+			match kind:
+				"coin":
+					if d < 0.44:
+						col = gold.darkened(0.25) if d > 0.36 else gold
+						if absf(d - 0.27) < 0.025:
+							col = gold.darkened(0.35)
+						if absf(p.x) < 0.04 and absf(p.y) < 0.15:
+							col = gold.darkened(0.4)
+				"fire":
+					var q := Vector2(p.x, p.y - 0.08)
+					var r := 0.3 - (0.0 if q.y > 0.0 else -q.y * 0.55)
+					if q.length() < r or (q.y < 0.0 and absf(q.x) < 0.3 + q.y * 0.75 and q.y > -0.42):
+						col = Color("ff7a2a").lerp(Color("ffd85a"), clampf(0.6 - q.y - q.length(), 0.0, 1.0))
+				"check":
+					if d < 0.44:
+						col = Color("2f9e57")
+						var a := Vector2(-0.2, 0.0)
+						var b := Vector2(-0.05, 0.15)
+						var c := Vector2(0.22, -0.15)
+						if _seg_dist(p, a, b) < 0.055 or _seg_dist(p, b, c) < 0.055:
+							col = Color.WHITE
+				"shelf":
+					if absf(p.x) < 0.42 and absf(p.y) < 0.42:
+						col = Color("6b4a32")
+						for cy in 3:
+							for cx in 3:
+								var cc := Vector2(-0.24 + cx * 0.24, -0.24 + cy * 0.24)
+								if (p - cc).length() < 0.085:
+									col = Color("d8b46a")
+				"pile":
+					for k in 3:
+						var cc := Vector2(-0.12 + k * 0.12, 0.18 - k * 0.15)
+						var e := Vector2((p.x - cc.x) / 0.3, (p.y - cc.y) / 0.13)
+						if e.length() < 1.0:
+							col = [Color("c0392b"), Color("e67e22"), Color("8e44ad")][k].lerp(Color.WHITE, 0.15 if e.length() > 0.8 else 0.0)
+				"clock":
+					if d < 0.44:
+						col = Color("efe4cf") if d < 0.37 else gold
+						if _seg_dist(p, Vector2.ZERO, Vector2(0, -0.25)) < 0.035 or _seg_dist(p, Vector2.ZERO, Vector2(0.17, 0.05)) < 0.035:
+							col = Color("3a2a1a")
+			img.set_pixel(x, y, col)
+	return ImageTexture.create_from_image(img)
+
+
+func _seg_dist(p: Vector2, a: Vector2, b: Vector2) -> float:
+	var ab := b - a
+	var t := clampf((p - a).dot(ab) / ab.length_squared(), 0.0, 1.0)
+	return (p - (a + ab * t)).length()
+
+
+func _update_hud_cards(total: int, s: int) -> void:
+	if hud_cards.is_empty():
+		return
+	(hud_cards["puan"] as Label).text = str(coins)
+	(hud_cards["dogru"] as Label).text = "%d/%d" % [correct, total]
+	(hud_cards["vitrin"] as Label).text = str(placed)
+	(hud_cards["yerde"] as Label).text = str(pile_count + flying.size())
+	(hud_cards["sure"] as Label).text = "%02d:%02d" % [floori(s / 60.0), s % 60]
+	(hud_card_panels["seri"] as Control).visible = streak > 0
+	(hud_cards["seri"] as Label).text = "%d  x%d" % [streak, _streak_mult()]
+	hud_progress.max_value = maxf(total, 1)
+	hud_progress.value = correct
+	if coins != hud_last_coins:
+		if hud_last_coins != -1 and coins > hud_last_coins:
+			var pc: Control = hud_card_panels["puan"]
+			pc.pivot_offset = pc.size / 2.0
+			var tw := create_tween()
+			tw.tween_property(pc, "scale", Vector2.ONE * 1.12, 0.08)
+			tw.tween_property(pc, "scale", Vector2.ONE, 0.18)
+		hud_last_coins = coins
 
 
 func _face_down(i: int) -> bool:
@@ -3126,6 +3386,7 @@ func _update_hud() -> void:
 	var total := tasos.size()
 	var s := int(elapsed)
 	var seri := ("      Seri: %d (x%d)" % [streak, _streak_mult()]) if streak > 0 else ""
+	_update_hud_cards(total, s)
 	hud_stats.text = ("Puan: %d" + seri + "      Doğru: %d/%d      Vitrinde: %d      Yerde: %d      Süre: %02d:%02d") % [coins, correct, total, placed, pile_count + flying.size(), floori(s / 60.0), s % 60]
 
 	if hand.is_empty():
@@ -3335,18 +3596,71 @@ func _update_order(delta: float) -> void:
 		env.adjustment_brightness = lerpf(0.88, 1.0, e)
 		sun.light_energy = lerpf(0.8, 1.2, e) if hi_gfx else lerpf(0.3, 0.6, e)
 		var lc := Color(1.0, 0.82, 0.62).lerp(Color(1.0, 0.94, 0.84), e)
-		for lamp in lamps:
-			var l: OmniLight3D = lamp
-			l.light_energy = lerpf(1.4, 2.2, e) if hi_gfx else lerpf(0.95, 1.55, e)
+		if lamp_base.size() != lamps.size():
+			_init_lamp_faults()
+		for k in lamps.size():
+			var l: OmniLight3D = lamps[k]
+			lamp_base[k] = lerpf(1.4, 2.2, e) if hi_gfx else lerpf(0.95, 1.55, e)
+			l.light_energy = lamp_base[k]
 			l.light_color = lc
+		if shaft_mat != null:
+			shaft_mat.set_shader_parameter("strength", lerpf(0.11, 0.2, e))
 		dust_mat.albedo_color.a = lerpf(0.65, 0.05, e)
 		dirt_mat.albedo_color.a = lerpf(0.75, 0.0, e)
+	_update_lamps(delta, p)
 	var m := _milestone_for(p)
 	if m > milestone and message_time < 0.5:
 		milestone = m
 		_say("Dükkân aydınlanıyor: %%%d düzenli" % roundi(float(MILESTONES[m - 1]) * 100.0))
 	elif m < milestone:
 		milestone = m
+
+
+## Her üç lambadan biri arızalı başlar ve titrer; düzen arttıkça sırayla düzelir.
+func _init_lamp_faults() -> void:
+	lamp_base.resize(lamps.size())
+	lamp_fix.resize(lamps.size())
+	lamp_dim.resize(lamps.size())
+	var broken := 0
+	for k in lamps.size():
+		lamp_base[k] = (lamps[k] as OmniLight3D).light_energy
+		lamp_dim[k] = 0.0
+		if k % 3 == 1:
+			lamp_fix[k] = [0.02, 0.1, 0.25, 0.5][broken % 4]
+			broken += 1
+		else:
+			lamp_fix[k] = -1.0
+
+
+func _update_lamps(delta: float, p: float) -> void:
+	if lamp_base.size() != lamps.size():
+		_init_lamp_faults()
+	for k in lamps.size():
+		if float(lamp_fix[k]) < 0.0:
+			continue
+		var l: OmniLight3D = lamps[k]
+		if p >= float(lamp_fix[k]):
+			l.light_energy = lamp_base[k]
+			continue
+		# arızalı: çoğunlukla yanar, ara sıra kısa süre söner
+		lamp_dim[k] = float(lamp_dim[k]) - delta
+		if float(lamp_dim[k]) <= -randf_range(0.4, 3.5):
+			lamp_dim[k] = randf_range(0.05, 0.35)
+		l.light_energy = float(lamp_base[k]) * (0.25 if float(lamp_dim[k]) > 0.0 else 1.0)
+	# neon tabela: başta sönük ve kesik kesik, %10 düzende tam yanar
+	if neon_label == null:
+		return
+	var on := 1.0
+	if p < 0.1:
+		neon_timer -= delta
+		if neon_timer <= 0.0:
+			neon_timer = randf_range(0.05, 0.6)
+			neon_dim = 0.08 if randf() < 0.55 else 0.6 + 0.4 * p / 0.1
+		on = neon_dim
+	var nc := Color(1.0, 0.45, 0.2)
+	neon_label.modulate = Color(0.25, 0.12, 0.08).lerp(Color(1.0, 0.86, 0.72), on)
+	neon_label.outline_modulate = Color(nc.r, nc.g, nc.b, 0.85 * on)
+	neon_light.light_energy = 1.2 * on
 
 
 ## Vitrinin kendi görünümü: doğru taso arttıkça LED yanar, camdaki toz silinir
@@ -3356,6 +3670,9 @@ func _shelf_look(g: int, good: int, done: bool) -> void:
 	lm.albedo_color = Color(1.0, 0.98, 0.9) if done else Color(0.2, 0.18, 0.15).lerp(Color("fff3d6"), sqrt(fr))
 	var dm: StandardMaterial3D = shelf_dust_mats[g]
 	dm.albedo_color.a = 0.12 * pow(1.0 - fr, 1.4)
+	var wm: StandardMaterial3D = wash_mats[g]
+	wm.albedo_color = (Color(0.75, 1.0, 0.8) if done else Color(1.0, 0.85, 0.6))
+	wm.albedo_color.a = 0.3 if done else 0.07 + 0.18 * sqrt(fr)
 	if shelf_lights[g] != null:
 		var sp: SpotLight3D = shelf_lights[g]
 		sp.light_energy = 2.0 if done else lerpf(0.08, 1.3, sqrt(fr))
@@ -3394,6 +3711,35 @@ func _celebrate(g: int) -> void:
 	shelf.add_child(p)
 	p.emitting = true
 	get_tree().create_timer(4.5).timeout.connect(p.queue_free)
+	celebrations.append({"g": g, "t": 0.0})
+	if player.global_position.distance_to(shelf.global_position) < 10.0:
+		fov_kick = 6.0
+
+
+## Set tamamlanınca: yuvalarda soldan sağa, yukarıdan aşağı akan altın bir ışık dalgası, LED ve spot nabız atar
+func _update_celebrations(delta: float) -> void:
+	fov_kick = move_toward(fov_kick, 0.0, delta * 5.0)
+	for k in range(celebrations.size() - 1, -1, -1):
+		var c: Dictionary = celebrations[k]
+		var g: int = c["g"]
+		c["t"] = float(c["t"]) + delta
+		var t: float = c["t"]
+		if t > 2.6 or not shelf_done[g]:
+			celebrations.remove_at(k)
+			for n in NUMBERS_PER_SET:
+				_refresh_ring(g, n)
+			_check_shelf(g)
+			continue
+		var front := t * 12.0
+		for n in NUMBERS_PER_SET:
+			var ph := front - (float(n % SLOT_COLS) + float(n / SLOT_COLS) * 0.55)
+			var glow := exp(-ph * ph * 0.35)
+			ring_mm.set_instance_color(g * NUMBERS_PER_SET + n, RING_DONE.lerp(Color(1.0, 0.92, 0.55), glow))
+		var pulse := 0.5 + 0.5 * sin(t * 9.0)
+		var wm: StandardMaterial3D = wash_mats[g]
+		wm.albedo_color = Color(1.0, 0.9, 0.6, 0.3 + 0.35 * pulse * (1.0 - t / 2.6))
+		if shelf_lights[g] != null:
+			(shelf_lights[g] as SpotLight3D).light_energy = 2.0 + 2.5 * pulse * (1.0 - t / 2.6)
 
 
 # ---------------- Albüm ----------------
@@ -3655,7 +4001,65 @@ var fans: Array = []
 const FLY_LAYER := 8
 var flying: Array = []                 # [{"i": taso, "body": RigidBody3D, "t": süre}]
 var wake_timer := 0.0
-var rest_until := {}                    # taso -> yeniden uyandırılabileceği an
+var rest_until := {}
+# Vitrin görünümü
+const VGLASS_SHADER := """shader_type spatial;
+render_mode blend_mix, depth_draw_never, cull_back;
+// vitrin camı: kenarlara doğru güçlenen yansıma ve bakışla kayan parlak çizgiler
+void fragment() {
+	float fres = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 3.0);
+	vec3 wp = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	vec3 r = reflect(-VIEW, NORMAL);
+	float s = sin((wp.x + wp.z) * 1.1 + wp.y * 1.7 + r.x * 3.5);
+	float streak = smoothstep(0.94, 1.0, s) * 0.55 + smoothstep(0.7, 1.0, s) * 0.07;
+	ALBEDO = vec3(0.86, 0.93, 1.0);
+	ALPHA = clamp(0.03 + fres * 0.38 + streak * 0.28, 0.0, 0.65);
+	EMISSION = vec3(0.9, 0.95, 1.0) * streak * 0.1;
+	ROUGHNESS = 0.04;
+	SPECULAR = 0.9;
+}
+"""
+const RECESS_SHADER := """shader_type spatial;
+render_mode unshaded, blend_mix, depth_draw_never, cull_back, shadows_disabled;
+// kadifedeki yuva çukuru: içi hafif koyu, üst kenarında gölge, dışında yumuşak hale
+void fragment() {
+	vec2 p = UV - 0.5;
+	float d = length(p) * 2.0;
+	float inside = 1.0 - smoothstep(0.76, 0.81, d);
+	float top = clamp(0.5 - p.y * 2.2, 0.0, 1.0);
+	float rim = smoothstep(0.3, 0.8, d) * inside * top;
+	float halo = (1.0 - inside) * (1.0 - smoothstep(0.81, 1.0, d)) * 0.25;
+	ALBEDO = vec3(0.0, 0.0, 0.015);
+	ALPHA = clamp(0.16 * inside + 0.42 * rim + halo, 0.0, 0.8);
+}
+"""
+var vglass_mat: ShaderMaterial
+var recess_mm: MultiMesh
+var wash_mats: Array = []               # LED'in fona vuran ışığı (vitrin başına)
+var celebrations: Array = []            # [{"g", "t"}] set tamamlanınca ışık dalgası
+var fov_kick := 0.0
+# Dükkân dönüşümü: arızalı lambalar düzen arttıkça düzelir, neon tabela yanar
+var lamp_base: Array = []               # lambanın o anki hedef enerjisi
+var lamp_fix: Array = []                # bu düzen oranında düzelir (-1: hiç arızalı değil)
+var lamp_dim: Array = []                # titreme: kalan sönük süre
+var neon_label: Label3D
+var neon_light: OmniLight3D
+var neon_dim := 0.0
+var neon_timer := 0.0
+var shaft_mat: ShaderMaterial
+const SHAFT_SHADER := """shader_type spatial;
+render_mode unshaded, blend_add, depth_draw_never, cull_disabled, shadows_disabled;
+// pencereden düşen gün ışığı huzmesi: pencere tarafında güçlü, zemine doğru söner, içinde yavaş kıpırdayan toz
+uniform float strength = 0.05;
+void fragment() {
+	float facing = abs(dot(NORMAL, VIEW));
+	float along = UV.y;
+	float fade = (1.0 - along) * smoothstep(0.0, 0.06, along);
+	float across = sin(clamp(UV.x, 0.0, 1.0) * 3.14159);
+	float n = 0.75 + 0.25 * sin(UV.x * 23.0 + TIME * 0.25) * sin(UV.y * 9.0 - TIME * 0.18);
+	ALBEDO = vec3(1.0, 0.93, 0.78) * strength * fade * across * n * facing;
+}
+"""                    # taso -> yeniden uyandırılabileceği an
 const MAX_ACTIVE := 120                 # aynı anda fizik cismi olabilecek en fazla taso
 # Yerleştirme animasyonu: taso elden uçarak yuvasına oturur
 var place_anims: Array = []             # [{"i","from","to","t","ok","g","n"}]
@@ -3862,6 +4266,103 @@ func _furnish() -> void:
 		cl.shadow_enabled = hi_gfx
 		add_child(cl)
 		lamps.append(cl)
+
+
+## Taso dükkânına özgü dekor: neon tabela, Kor Vadisi posterleri, taso kutularıyla dolu stand
+func _shop_decor() -> void:
+	var hw := ROOM_W / 2.0
+	var hd := ROOM_D / 2.0
+	# neon tabela: asma katın ön kenarında, girişten bakınca karşıda
+	neon_label = Label3D.new()
+	neon_label.text = "TASO DÜKKÂNI"
+	neon_label.font_size = 96
+	neon_label.pixel_size = 0.0115
+	neon_label.outline_size = 28
+	neon_label.shaded = false
+	neon_label.double_sided = false
+	neon_label.position = Vector3(0, MEZZ_Y - 0.75, MEZZ_EDGE_Z + 0.22)
+	add_child(neon_label)
+	var back := _mesh_box(self, Vector3(9.4, 1.45, 0.05), Vector3(0, MEZZ_Y - 0.75, MEZZ_EDGE_Z + 0.17), _mat(Color(0.05, 0.04, 0.04)))
+	back.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	neon_light = OmniLight3D.new()
+	neon_light.position = Vector3(0, MEZZ_Y - 0.75, MEZZ_EDGE_Z + 1.2)
+	neon_light.omni_range = 7.0
+	neon_light.light_color = Color(1.0, 0.5, 0.25)
+	add_child(neon_light)
+	# posterler: Kor Vadisi'nin son evrimleri, yan duvarlarda vitrinlerin arasında
+	var art_path := "res://assets/art/set_00.jpg"
+	if ResourceLoader.exists(art_path):
+		var art: Texture2D = load(art_path)
+		var spots := [[Vector3(-hw + 0.06, 3.5, -1.25), PI / 2, 30], [Vector3(-hw + 0.06, 3.5, 13.75), PI / 2, 72],
+			[Vector3(hw - 0.06, 3.5, -8.75), -PI / 2, 111], [Vector3(hw - 0.06, 3.5, 6.25), -PI / 2, 9]]
+		for sp in spots:
+			_poster(art, sp[0], sp[1], sp[2])
+	# taso standı: girişin sağında, kutular ve açık bir taso paketi
+	var sx := 4.9
+	var sz := hd - 4.2
+	var table := _box(self, Vector3(1.6, 0.85, 1.0), Vector3(sx, 0.425, sz), Color("6b4a32"), "wall", mat_wood)
+	table.set_meta("kind", "wall")
+	props_blocked.append([Rect2(sx - 1.05, sz - 0.75, 2.1, 1.5), 0.0])
+	var cols := [Color("c0392b"), Color("e67e22"), Color("2c3e50"), Color("8e44ad"), Color("16a085")]
+	var k := 0
+	for row in 2:
+		for c in 4:
+			var bm := StandardMaterial3D.new()
+			bm.albedo_color = cols[(k * 3 + row) % cols.size()]
+			bm.roughness = 0.45
+			var bx := _mesh_box(self, Vector3(0.3, 0.2 + 0.04 * (k % 3), 0.2), Vector3(sx - 0.55 + c * 0.36, 0.85 + 0.1 + 0.02 * (k % 3), sz - 0.22 + row * 0.42), bm)
+			var lb := Label3D.new()
+			lb.text = "TASO"
+			lb.font_size = 40
+			lb.pixel_size = 0.002
+			lb.outline_size = 6
+			lb.modulate = Color(1.0, 0.92, 0.55)
+			lb.position = Vector3(0, 0.0, -0.101)
+			lb.rotation.y = PI
+			bx.add_child(lb)
+			k += 1
+	var sign := Label3D.new()
+	sign.text = "YENİ SET\nKor Vadisi"
+	sign.font_size = 48
+	sign.pixel_size = 0.0035
+	sign.outline_size = 8
+	sign.modulate = Color(1.0, 0.85, 0.4)
+	sign.position = Vector3(sx, 1.45, sz - 0.1)
+	sign.rotation.y = PI
+	add_child(sign)
+
+
+func _poster(art: Texture2D, pos: Vector3, rot: float, num: int) -> void:
+	var node := Node3D.new()
+	node.position = pos
+	node.rotation.y = rot
+	add_child(node)
+	_mesh_box(node, Vector3(1.16, 1.46, 0.04), Vector3(0, 0, 0), mat_wood)
+	var pm := StandardMaterial3D.new()
+	pm.albedo_texture = art
+	pm.roughness = 0.55
+	pm.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+	var cell := num - 1
+	var inset := 0.015
+	pm.uv1_scale = Vector3((1.0 - inset * 2.0) / 13.0, (1.0 - inset * 2.0) / 12.0, 1)
+	pm.uv1_offset = Vector3((float(cell % 13) + inset) / 13.0, (float(cell / 13) + inset) / 12.0, 0)
+	var q := QuadMesh.new()
+	q.size = Vector2(1.0, 1.0)
+	var mi := MeshInstance3D.new()
+	mi.mesh = q
+	mi.material_override = pm
+	mi.position = Vector3(0, 0.12, 0.022)
+	node.add_child(mi)
+	var plate := _mesh_box(node, Vector3(1.0, 0.2, 0.01), Vector3(0, -0.55, 0.022), _mat(Color("efe4cf")))
+	plate.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var lb := Label3D.new()
+	lb.text = "KOR VADİSİ  •  #%d" % num
+	lb.font_size = 40
+	lb.pixel_size = 0.0028
+	lb.outline_size = 0
+	lb.modulate = Color(0.2, 0.12, 0.06)
+	lb.position = Vector3(0, -0.55, 0.029)
+	node.add_child(lb)
 
 
 ## İç mekân detayları: ahşap lambri, tavan kirişleri, halılar

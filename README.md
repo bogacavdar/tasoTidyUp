@@ -29,6 +29,7 @@ Godot ile yapılan bir "kaostan düzene" toplu dizme oyunu. Oyuncu birinci şah�
 - **İlk açılış rehberi:** Yeni oyunda 7 adımlık kısa bir rehber: taso alma, seçme, vitrini bulma, numara sırası, kırmızı halka ve puanlar, gelişim ağacı. H ile ya da telefonda "Rehberi geç" ile atlanır; Ayarlar'dan baştan gösterilir.
 - **Gelişim ağacı (Tab):** Taşıma ve hareket (El Kapasitesi, Avuç, Hız), Görüş (Sezgi, Vitrin Pusulası, Numara Rehberi), Büyüler (Toplama, Otomatik Dizme, Ayıklama, Çevirme). Büyüler bekleme sürelidir: Z Sezgi, F Toplama, G Ayıklama, C Çevirme. Numara Rehberi vitrine bakınca boş yuvalarda soluk numara gösterir; Çevirme çevredeki ters tasoları düz çevirir.
 - **Seri bonusu:** Art arda ilk kez doğru yerleştirdiğin her 5 taso puanı katlar (5'te x2, 10'da x3). Yanlış yerleştirme seriyi sıfırlar.
+- **Görünüm:** Tasoların ön yüzü cilalı, bakış açısıyla üstünde parıltı kayar. Vitrin camı yansır, yuvalar kadifede çukur görünür, LED ışığı doluluğa göre fona vurur. Set tamamlanınca yuvalarda altın bir ışık dalgası akar. Dükkânda bazı lambalar arızalı titrer ve düzen arttıkça düzelir; asma katın önündeki "TASO DÜKKÂNI" neonu %10 düzende tam yanar. Pencerelerden gün ışığı huzmeleri düşer. Duvarlarda Kor Vadisi posterleri, girişte taso standı var.
 - **Yerleştirme ve fizik:** Taso elden uçarak yuvasına oturur, doğruysa parlar. Fırlatılan taso yerdeki tasolara çarpar, onları iter ve üst üste yığılabilir.
 
 ### İndir
