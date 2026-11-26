@@ -27,7 +27,9 @@ Godot ile yapılan bir "kaostan düzene" toplu dizme oyunu. Oyuncu birinci şah�
 - **Albüm (B ya da menü):** 34 setin her biri için 150 canlılık bir sayfa. Doğru yerine koyduğun canlılar renkli açılır, diğerleri karanlık siluet olarak durur. Alttaki set sekmeleri ve oklarla gezilir.
 - **Ses ve müzik:** Kodla sentezlenmiş sakin bir lo-fi dükkân müziği (`tools/gen_music.py` → `assets/audio/muzik.ogg`), ayak sesleri, taso alma, bırakma, yanlış yerleştirme, satın alma ve büyü sesleri. Ayarlarda genel ses, müzik ve efekt ayrı ayrı.
 - **İlk açılış rehberi:** Yeni oyunda 7 adımlık kısa bir rehber: taso alma, seçme, vitrini bulma, numara sırası, kırmızı halka ve puanlar, gelişim ağacı. H ile ya da telefonda "Rehberi geç" ile atlanır; Ayarlar'dan baştan gösterilir.
-- **Gelişim ağacı (Tab):** Taşıma ve hareket (El Kapasitesi, Avuç, Hız), Görüş (Sezgi, Vitrin Pusulası), Büyüler (Toplama, Otomatik Dizme, Ayıklama). Büyüler bekleme sürelidir: Z Sezgi, F Toplama, G Ayıklama.
+- **Gelişim ağacı (Tab):** Taşıma ve hareket (El Kapasitesi, Avuç, Hız), Görüş (Sezgi, Vitrin Pusulası, Numara Rehberi), Büyüler (Toplama, Otomatik Dizme, Ayıklama, Çevirme). Büyüler bekleme sürelidir: Z Sezgi, F Toplama, G Ayıklama, C Çevirme. Numara Rehberi vitrine bakınca boş yuvalarda soluk numara gösterir; Çevirme çevredeki ters tasoları düz çevirir.
+- **Seri bonusu:** Art arda ilk kez doğru yerleştirdiğin her 5 taso puanı katlar (5'te x2, 10'da x3). Yanlış yerleştirme seriyi sıfırlar.
+- **Yerleştirme ve fizik:** Taso elden uçarak yuvasına oturur, doğruysa parlar. Fırlatılan taso yerdeki tasolara çarpar, onları iter ve üst üste yığılabilir.
 
 ### İndir
 
@@ -48,6 +50,7 @@ Her `main` push'unda GitHub Actions web build alıp GitHub Pages'e yayınlar: ht
 
 - **WASD:** yürü, **Shift:** koş, **Boşluk:** zıpla, **fare:** bak
 - **Sol tık:** yerden taso al / seçili tasoyu boş yuvaya koy / dolu yuvadaki tasoyu eline al (bir yuvada tek taso olur)
+- **Sol tık basılı tutup sürükle (vitrinde):** yuvadaki tasoyu başka yuvaya taşı; dolu yuvaya bırakırsan iki taso yer değiştirir, vitrin dışına bırakırsan eline gelir
 - **Fare tekerleği:** eldeki tasolar arasında seçim yap
 - **Q:** seçili tasoyu fırlat, **Shift+Q:** elindekilerin hepsini fırlat (fizikle seker, ters düşebilir)
 - **Sağ tık (basılı tut):** yakınlaştır (zoom); telefonda Zoom butonu

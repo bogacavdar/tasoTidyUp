@@ -98,7 +98,9 @@ const AYIKLAMA_R := [0.0, 4.0, 8.0]
 const CD_SEZGI := 30.0
 const CD_TOPLAMA := 40.0
 const CD_AYIKLAMA := 60.0
-const ABILITY_KEYS := {"sezgi": "Z", "toplama": "F", "ayiklama": "G"}
+const ABILITY_KEYS := {"sezgi": "Z", "toplama": "F", "ayiklama": "G", "cevir": "C"}
+const CEVIR_R := [0.0, 5.0, 10.0]
+const CD_CEVIR := 30.0
 
 # Puan: doğru yere ilk kez oturan taso, tamamlanan tür (3 evrim) ve vitrin
 const COIN_PLACE := 1
@@ -121,7 +123,7 @@ var sel := 0                          # eldeki seçili taso
 var skills := {}
 var coins := 0                        # puan
 var species_paid: Array[bool] = []
-var cooldowns := {"sezgi": 0.0, "toplama": 0.0, "ayiklama": 0.0}
+var cooldowns := {"sezgi": 0.0, "toplama": 0.0, "ayiklama": 0.0, "cevir": 0.0}
 var sezgi_time := 0.0
 var sezgi_grp := -1
 var glow_mm: MultiMesh
@@ -317,7 +319,7 @@ func _ready() -> void:
 
 
 ## Gelişim ağacı: dal 0 taşıma/hareket, 1 görüş, 2 büyüler. req: önce açılması gereken düğüm.
-const TREE_ORDER := ["kapasite", "avuc", "hiz", "sezgi", "pusula", "toplama", "oto", "ayiklama"]
+const TREE_ORDER := ["kapasite", "avuc", "hiz", "sezgi", "pusula", "rehber", "toplama", "oto", "ayiklama", "cevir"]
 
 
 func _init_skills() -> void:
@@ -332,6 +334,10 @@ func _init_skills() -> void:
 			"desc": "Seçili tasonun setini yerde parlatır: 8 / 14 / 20 sn (30 sn bekleme)"},
 		"pusula": {"name": "Vitrin Pusulası", "branch": 1, "req": "sezgi", "cost": [60], "level": 0,
 			"desc": "Seçili tasonun vitrinini ve doğru yuvasını gösterir"},
+		"rehber": {"name": "Numara Rehberi", "branch": 1, "req": "sezgi", "cost": [70, 180], "level": 0,
+			"desc": "Vitrine bakınca boş yuvalarda soluk numaralar: satır başları / bütün yuvalar"},
+		"cevir": {"name": "Çevirme [C]", "branch": 2, "req": "toplama", "cost": [90, 220], "level": 0,
+			"desc": "Çevrendeki 5 / 10 m içindeki ters tasoları düz çevirir (30 sn bekleme)"},
 		"toplama": {"name": "Toplama [F]", "branch": 2, "req": "sezgi", "cost": [120, 250, 500], "level": 0,
 			"desc": "Seçili tasonun setinden 4 / 7 / 12 m içindekileri önüne çeker (40 sn bekleme)"},
 		"oto": {"name": "Otomatik Dizme", "branch": 2, "req": "pusula", "cost": [200], "level": 0,
@@ -1367,20 +1373,7 @@ func _throw(i: int, k: int, n: int, fwd: Vector3, cb: Basis) -> void:
 		taso_phys = PhysicsMaterial.new()
 		taso_phys.bounce = 0.35
 		taso_phys.friction = 0.75
-	var body := RigidBody3D.new()
-	body.mass = 0.02
-	body.collision_layer = FLY_LAYER
-	body.collision_mask = 1 | FLY_LAYER
-	body.continuous_cd = true
-	body.physics_material_override = taso_phys
-	body.angular_damp = 0.4
-	var cs := CollisionShape3D.new()
-	var sh := CylinderShape3D.new()
-	sh.radius = TASO_R
-	sh.height = maxf(TASO_H, 0.012)
-	cs.shape = sh
-	body.add_child(cs)
-	add_child(body)
+	var body := _new_taso_body()
 	# elden çıkış: tasonun yüzü kameraya dönük, birden fazlaysa hafif dağınık
 	var right := cb.x
 	var start := cam.global_position + fwd * 0.45 + right * 0.18 - cb.y * 0.18
@@ -1396,6 +1389,10 @@ func _throw(i: int, k: int, n: int, fwd: Vector3, cb: Basis) -> void:
 
 
 func _update_flying(delta: float) -> void:
+	wake_timer -= delta
+	if wake_timer <= 0.0:
+		wake_timer = 0.05
+		_wake_near_flying()
 	for k in range(flying.size() - 1, -1, -1):
 		var e: Dictionary = flying[k]
 		var body: RigidBody3D = e["body"]
@@ -1403,18 +1400,91 @@ func _update_flying(delta: float) -> void:
 		e["t"] = float(e["t"]) + delta
 		var xf := body.global_transform
 		_pile_xf(i, xf)
-		if body.linear_velocity.length() < 0.05 and body.angular_velocity.length() < 0.4:
+		var quiet: bool = e.get("quiet", false)
+		var lv := 0.2 if quiet else 0.05
+		var av := 5.0 if quiet else 0.4
+		if body.linear_velocity.length() < lv and body.angular_velocity.length() < av:
 			e["slow"] = float(e["slow"]) + delta
 		else:
 			e["slow"] = 0.0
-		if body.sleeping or float(e["slow"]) > 0.35 or float(e["t"]) > 6.0 or xf.origin.y < -3.0:
+		var limit := 2.5 if quiet else 6.0
+		if body.sleeping or float(e["slow"]) > 0.35 or float(e["t"]) > limit or xf.origin.y < -3.0:
 			_land(k)
+
+
+## Hareket eden tasoların yakınındaki yerdeki tasolar da fizik cismi olur: çarpışır, itilir, üst üste yığılır
+func _wake_near_flying() -> void:
+	var movers: Array = []
+	for e in flying:
+		var b: RigidBody3D = e["body"]
+		if b.linear_velocity.length() > (1.2 if e.get("quiet", false) else 0.4):
+			movers.append(b.global_position)
+	for pos in movers:
+		if flying.size() >= MAX_ACTIVE:
+			return
+		var c0 := _cell(pos)
+		for dx in [-1, 0, 1]:
+			for dz in [-1, 0, 1]:
+				var key := c0 + Vector2i(dx, dz)
+				if not grid.has(key):
+					continue
+				for i in (grid[key] as Array).duplicate():
+					var o := pile_xf[i].origin
+					if float(rest_until.get(i, 0.0)) > anim:
+						continue
+					if absf(o.y - pos.y) < 0.6 and Vector2(o.x - pos.x, o.z - pos.z).length() < 0.55:
+						_activate(i)
+						if flying.size() >= MAX_ACTIVE:
+							return
+
+
+func _new_taso_body() -> RigidBody3D:
+	if taso_phys == null:
+		taso_phys = PhysicsMaterial.new()
+		taso_phys.bounce = 0.35
+		taso_phys.friction = 0.75
+	var body := RigidBody3D.new()
+	body.mass = 0.02
+	body.collision_layer = FLY_LAYER
+	body.collision_mask = 1 | FLY_LAYER
+	body.continuous_cd = true
+	body.physics_material_override = taso_phys
+	body.angular_damp = 0.4
+	var cs := CollisionShape3D.new()
+	var sh := CylinderShape3D.new()
+	sh.radius = TASO_R
+	sh.height = maxf(TASO_H, 0.012)
+	cs.shape = sh
+	body.add_child(cs)
+	add_child(body)
+	return body
+
+
+## Yerdeki bir tasoyu duran bir fizik cismine çevir (çarpılınca hareket eder, durunca yere geri döner)
+func _activate(i: int) -> void:
+	if not in_pile[i]:
+		return
+	_grid_remove(i)
+	in_pile[i] = false
+	pile_count -= 1
+	var body := _new_taso_body()
+	var xf := pile_xf[i].orthonormalized()
+	# çarpışma şekli zeminin içinde başlamasın
+	var q := PhysicsRayQueryParameters3D.create(xf.origin + Vector3.UP * 0.05, xf.origin + Vector3.DOWN * 0.3)
+	q.collision_mask = 1
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	if not hit.is_empty():
+		xf.origin.y = maxf(xf.origin.y, hit["position"].y + 0.0065)
+	xf.origin.y += 0.002
+	body.global_transform = xf
+	flying.append({"i": i, "body": body, "t": 0.0, "slow": 0.0, "quiet": true})
 
 
 func _land(k: int) -> void:
 	var e: Dictionary = flying[k]
 	var body: RigidBody3D = e["body"]
 	var i: int = e["i"]
+	rest_until[i] = anim + 2.0
 	var xf := body.global_transform.orthonormalized()
 	if xf.origin.y < -3.0:
 		xf = Transform3D(Basis(Vector3.UP, randf() * TAU), _random_floor_pos())
@@ -1431,7 +1501,7 @@ func _land(k: int) -> void:
 	flying.remove_at(k)
 	body.queue_free()
 	_put_in_pile(i, xf)
-	if float(e["t"]) < 6.0:
+	if float(e["t"]) < 6.0 and not e.get("quiet", false):
 		_play(snd_drop)
 
 
@@ -1527,6 +1597,9 @@ func _process(delta: float) -> void:
 		if sezgi_time <= 0.0 or fmod(anim, 0.5) < delta:
 			_refresh_glow()
 	_update_compass()
+	_update_place_anims(delta)
+	_update_drag()
+	_update_guide(delta)
 	_update_order(delta)
 	for f in fans:
 		(f as Node3D).rotate_y(delta * 2.2)
@@ -1547,13 +1620,16 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT:
 		zooming = event.pressed and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 		return
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+		_on_release()
+		return
 	if event is InputEventMouseButton and event.pressed:
 		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 			return
 		match event.button_index:
 			MOUSE_BUTTON_LEFT:
-				_on_use()
+				_on_press()
 			MOUSE_BUTTON_WHEEL_UP:
 				_cycle(-1)
 			MOUSE_BUTTON_WHEEL_DOWN:
@@ -1573,6 +1649,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				_use_ability("toplama")
 			KEY_G:
 				_use_ability("ayiklama")
+			KEY_C:
+				_use_ability("cevir")
 			KEY_B:
 				_open_album()
 			KEY_H:
@@ -1676,8 +1754,8 @@ func _build_touch_ui(layer: CanvasLayer) -> void:
 	_touch_button(layer, "<", Vector2(20, 110), Vector2(90, 80)).pressed.connect(func(): _cycle(-1))
 	_touch_button(layer, ">", Vector2(120, 110), Vector2(90, 80)).pressed.connect(func(): _cycle(1))
 	_touch_button(layer, "Ağaç", Vector2(1290, 20), Vector2(140, 70)).pressed.connect(func(): _open_tree())
-	var keys := ["sezgi", "toplama", "ayiklama"]
-	var labels := ["Sezgi", "Topla", "Ayıkla"]
+	var keys := ["sezgi", "toplama", "ayiklama", "cevir"]
+	var labels := ["Sezgi", "Topla", "Ayıkla", "Çevir"]
 	for k in keys.size():
 		var key: String = keys[k]
 		var b := _touch_button(layer, labels[k], Vector2(1100 + k * 120, 470), Vector2(110, 75))
@@ -1731,6 +1809,107 @@ func _find_target() -> Dictionary:
 
 
 # ---------------- Etkileşim ----------------
+## Sol tuşa basıldı: vitrindeki dolu bir yuvaysa bırakılana kadar bekle (tık mı, sürükleme mi?)
+func _on_press() -> void:
+	press_info = {}
+	dragging = false
+	if target.get("kind", "") == "shelf":
+		var body: Node = target["body"]
+		var g: int = body.get_meta("grp")
+		var shelf: Node3D = shelves[g]
+		var n := _nearest_slot(shelf.to_local(target["point"]))
+		if n != -1 and slots[g][n] != -1:
+			press_info = {"g": g, "n": n, "i": slots[g][n], "body": body, "point": target["point"]}
+			return
+	_on_use()
+
+
+## Sürüklerken: imlecin gösterdiği yuva (yoksa -1)
+func _drag_slot() -> Vector2i:
+	if target.get("kind", "") != "shelf":
+		return Vector2i(-1, -1)
+	var body: Node = target["body"]
+	var g: int = body.get_meta("grp")
+	var shelf: Node3D = shelves[g]
+	var n := _nearest_slot(shelf.to_local(target["point"]))
+	return Vector2i(g, n) if n != -1 else Vector2i(-1, -1)
+
+
+func _update_drag() -> void:
+	if press_info.is_empty():
+		return
+	var g: int = press_info["g"]
+	var n: int = press_info["n"]
+	var i: int = press_info["i"]
+	if slots[g][n] != i:
+		press_info = {}
+		dragging = false
+		return
+	var ds := _drag_slot()
+	if not dragging and ds != Vector2i(g, n):
+		dragging = true
+		_cancel_anim(i)
+	if dragging:
+		# taso imleci izler, yuvasından hafif kalkmış
+		var t: Dictionary = tasos[i]
+		var smm: MultiMesh = shelf_mms[t["grp"]]
+		var base := _slot_xf(g, n)
+		var d := (base.origin - cam.global_position).length()
+		var pos := cam.global_position - cam.global_transform.basis.z * maxf(d - 0.08, 0.3)
+		smm.set_instance_transform(int(t["num"]) - 1, Transform3D(base.basis, pos))
+
+
+func _on_release() -> void:
+	if press_info.is_empty():
+		return
+	var g: int = press_info["g"]
+	var n: int = press_info["n"]
+	var i: int = press_info["i"]
+	var was_drag := dragging
+	var body: Node = press_info["body"]
+	var point: Vector3 = press_info["point"]
+	press_info = {}
+	dragging = false
+	if slots[g][n] != i:
+		return
+	if not was_drag:
+		# sürüklemeden bırakıldı: eski davranış, taso ele gelir
+		_use_shelf(body, point)
+		return
+	var t: Dictionary = tasos[i]
+	var smm: MultiMesh = shelf_mms[t["grp"]]
+	var cur: Transform3D = smm.get_instance_transform(int(t["num"]) - 1)
+	var ds := _drag_slot()
+	if ds.x == -1:
+		# vitrin dışına bırakıldı: ele al (yer varsa)
+		if hand.size() < _cap():
+			_unplace(g, n)
+			hand.append(i)
+			sel = hand.size() - 1
+			_play(snd_pick)
+			_rebuild_hand()
+		else:
+			_say("Elin dolu (%d)" % _cap())
+			_unplace(g, n)
+			_place(i, g, n, cur, 0.0, false)
+		return
+	var g2 := ds.x
+	var m := ds.y
+	if g2 == g and m == n:
+		_unplace(g, n)
+		_place(i, g, n, cur, 0.0, false)
+		return
+	var other: int = slots[g2][m]
+	_unplace(g, n)
+	if other != -1:
+		var oxf := _slot_xf(g2, m)
+		_unplace(g2, m)
+		_place(i, g2, m, cur)
+		_place(other, g, n, oxf, 0.0, false)
+	else:
+		_place(i, g2, m, cur)
+
+
 func _on_use() -> void:
 	var kind: String = target.get("kind", "")
 	match kind:
@@ -1787,7 +1966,7 @@ func _use_shelf(body: Node, hp: Vector3) -> void:
 			var t: Dictionary = tasos[i]
 			var n: int = t["num"] - 1
 			if t["grp"] == g and slots[g][n] == -1:
-				_place(i, g, n)
+				_place(i, g, n, null, cnt * 0.04)
 				cnt += 1
 			else:
 				keep.append(i)
@@ -1821,21 +2000,40 @@ func _use_shelf(body: Node, hp: Vector3) -> void:
 	_rebuild_hand()
 
 
-func _place(i: int, g: int, n: int) -> void:
+func _slot_xf(g: int, n: int) -> Transform3D:
+	var shelf: Node3D = shelves[g]
+	return shelf.global_transform * Transform3D(Basis(Vector3.RIGHT, PI / 2), _slot_local(n) + Vector3(0, 0, 0.009))
+
+
+## Elindeki seçili tasonun dünyadaki yeri (yerleştirme animasyonunun başlangıcı)
+func _hand_xf() -> Transform3D:
+	return hand_root.global_transform * Transform3D(Basis().scaled(Vector3.ONE * 1.25), Vector3(0, 0.06, 0.02))
+
+
+## from: animasyonun başladığı yer (yoksa elden). streak_ok: seri sayacını etkilesin mi
+func _place(i: int, g: int, n: int, from: Variant = null, delay: float = 0.0, streak_ok: bool = true) -> void:
 	var t: Dictionary = tasos[i]
 	slots[g][n] = i
 	placed += 1
 	save_dirty = true
-	var shelf: Node3D = shelves[g]
 	var smm: MultiMesh = shelf_mms[t["grp"]]
-	smm.set_instance_transform(int(t["num"]) - 1, shelf.global_transform * Transform3D(Basis(Vector3.RIGHT, PI / 2), _slot_local(n) + Vector3(0, 0, 0.009)))
-	if _is_correct(g, n):
+	var to := _slot_xf(g, n)
+	var ok := _is_correct(g, n)
+	if loading:
+		smm.set_instance_transform(int(t["num"]) - 1, to)
+	else:
+		var fx: Transform3D = from if from != null else _hand_xf()
+		smm.set_instance_transform(int(t["num"]) - 1, fx)
+		place_anims.append({"i": i, "from": fx, "to": to, "t": -delay, "ok": ok})
+	if ok:
 		correct += 1
-		if not loading:
-			_play(snd_correct)
 		if not paid[i] and not loading:
 			paid[i] = true
-			coins += COIN_PLACE
+			if streak_ok:
+				streak += 1
+				if streak == 5 or streak == 10:
+					_say("Seri %d! Puanlar artık x%d" % [streak, _streak_mult()])
+			coins += COIN_PLACE * _streak_mult()
 		# tür bonusu: aynı türün 3 evrimi de doğru yerdeyse
 		var sp := floori((int(t["num"]) - 1) / 3.0)
 		var sk_i := g * (NUMBERS_PER_SET / 3) + sp
@@ -1848,14 +2046,83 @@ func _place(i: int, g: int, n: int) -> void:
 				species_paid[sk_i] = true
 				coins += COIN_SPECIES
 				_say("Tür tamam: 3 evrim yan yana! +%d puan" % COIN_SPECIES)
-	elif not loading:
-		_play(snd_wrong)
+	elif not loading and streak_ok:
+		if streak >= 5:
+			_say("Seri bozuldu (%d)" % streak)
+		streak = 0
 	_check_shelf(g)
 	_refresh_ring(g, n)
 
 
+func _streak_mult() -> int:
+	return 1 + mini(floori(streak / 5.0), 2)
+
+
+func _update_place_anims(delta: float) -> void:
+	for k in range(place_anims.size() - 1, -1, -1):
+		var a: Dictionary = place_anims[k]
+		a["t"] = float(a["t"]) + delta / 0.24
+		var i: int = a["i"]
+		var t: Dictionary = tasos[i]
+		var smm: MultiMesh = shelf_mms[t["grp"]]
+		var u := clampf(float(a["t"]), 0.0, 1.0)
+		var e := 1.0 - pow(1.0 - u, 3.0)
+		var from: Transform3D = a["from"]
+		var to: Transform3D = a["to"]
+		var xf := from.interpolate_with(to, e)
+		xf.origin += to.basis.y * 0.12 * sin(PI * u)
+		smm.set_instance_transform(int(t["num"]) - 1, xf)
+		if u >= 1.0:
+			smm.set_instance_transform(int(t["num"]) - 1, to)
+			place_anims.remove_at(k)
+			if a["ok"]:
+				_play(snd_correct)
+				_sparkle(to.origin + to.basis.y * 0.02, Color("ffd36b"))
+			else:
+				_play(snd_wrong)
+
+
+func _cancel_anim(i: int) -> void:
+	for k in range(place_anims.size() - 1, -1, -1):
+		if int(place_anims[k]["i"]) == i:
+			place_anims.remove_at(k)
+
+
+func _sparkle(pos: Vector3, col: Color) -> void:
+	if sparkle_mesh == null:
+		sparkle_mesh = QuadMesh.new()
+		sparkle_mesh.size = Vector2(0.025, 0.025)
+		var m := StandardMaterial3D.new()
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+		m.vertex_color_use_as_albedo = true
+		m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		sparkle_mesh.material = m
+	var p := CPUParticles3D.new()
+	p.one_shot = true
+	p.amount = 26
+	p.lifetime = 0.6
+	p.explosiveness = 1.0
+	p.mesh = sparkle_mesh
+	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+	p.emission_sphere_radius = TASO_R * 0.9
+	p.direction = Vector3(0, 1, 0)
+	p.spread = 180.0
+	p.initial_velocity_min = 0.3
+	p.initial_velocity_max = 0.9
+	p.gravity = Vector3(0, -0.6, 0)
+	p.scale_amount_min = 0.5
+	p.scale_amount_max = 1.3
+	p.color = col
+	add_child(p)
+	p.global_position = pos
+	p.emitting = true
+	get_tree().create_timer(1.2).timeout.connect(p.queue_free)
+
+
 func _unplace(g: int, n: int) -> int:
 	var i: int = slots[g][n]
+	_cancel_anim(i)
 	if _is_correct(g, n):
 		correct -= 1
 	slots[g][n] = -1
@@ -2013,6 +2280,12 @@ func _use_ability(key: String) -> void:
 			cooldowns["toplama"] = CD_TOPLAMA
 			_play(snd_magic, true)
 			_say("Toplama: %d %s tasosu önüne geldi" % [n, SETS[g]["name"]])
+		"cevir":
+			_land_all()
+			var n := _flip_around(CEVIR_R[_lvl("cevir")])
+			cooldowns["cevir"] = CD_CEVIR
+			_play(snd_magic, true)
+			_say("Çevirme: %d ters taso düzeldi" % n)
 		"ayiklama":
 			var n := _sort_around(AYIKLAMA_R[_lvl("ayiklama")])
 			cooldowns["ayiklama"] = CD_AYIKLAMA
@@ -2078,6 +2351,64 @@ func _sort_around(r: float) -> int:
 			total += 1
 	_refresh_glow()
 	return total
+
+
+## Çevredeki ters tasoları düz çevirir
+func _flip_around(r: float) -> int:
+	var pp := player.global_position
+	var n := 0
+	for i in tasos.size():
+		if not in_pile[i] or not _face_down(i):
+			continue
+		var o := pile_xf[i].origin
+		if _on_floor_of_player(o) and Vector2(o.x - pp.x, o.z - pp.z).length() <= r:
+			_move_pile(i, Transform3D(Basis(Vector3.UP, randf() * TAU), o))
+			n += 1
+	return n
+
+
+## Numara Rehberi: bakılan vitrinin boş yuvalarında soluk numaralar
+func _update_guide(delta: float) -> void:
+	var lv := _lvl("rehber")
+	var g := -1
+	if lv > 0 and target.get("kind", "") == "shelf":
+		var body: Node = target["body"]
+		g = body.get_meta("grp")
+		guide_hide = 1.0
+	elif guide_g != -1:
+		guide_hide -= delta
+		if guide_hide > 0.0:
+			g = guide_g
+	if g == -1:
+		if guide_g != -1:
+			for lb in guide_labels:
+				(lb as Label3D).visible = false
+			guide_g = -1
+		return
+	var ver := placed * 1000 + lv
+	if g == guide_g and ver == guide_ver:
+		return
+	guide_g = g
+	guide_ver = ver
+	if guide_labels.is_empty():
+		for k in NUMBERS_PER_SET:
+			var lb := Label3D.new()
+			lb.font_size = 36
+			lb.pixel_size = 0.0014
+			lb.outline_size = 8
+			lb.modulate = Color(1, 0.95, 0.8, 0.55)
+			lb.outline_modulate = Color(0, 0, 0, 0.5)
+			lb.visible = false
+			add_child(lb)
+			guide_labels.append(lb)
+	for n in NUMBERS_PER_SET:
+		var lb: Label3D = guide_labels[n]
+		var show: bool = slots[g][n] == -1 and (lv >= 2 or n % SLOT_COLS == 0)
+		lb.visible = show
+		if show:
+			var xf := _slot_xf(g, n)
+			lb.global_transform = Transform3D(xf.basis * Basis(Vector3.RIGHT, -PI / 2), xf.origin + xf.basis.y * 0.01)
+			lb.text = str(n + 1)
 
 
 func _move_pile(i: int, xf: Transform3D) -> void:
@@ -2779,7 +3110,7 @@ func _build_hud() -> void:
 		_build_touch_ui(layer)
 	_build_tutorial(layer)
 	if not touch_mode:
-		help.text = "WASD yürü  •  Shift koş  •  Boşluk zıpla  •  Fare bak\nSol tık: taso al / boş yuvaya koy / dolu yuvadakini eline al\nTekerlek: eldeki tasoyu seç\nQ: seçiliyi fırlat  •  Shift+Q: hepsini fırlat  •  Sağ tık (basılı): yakınlaştır\nTab: gelişim ağacı  •  B: albüm  •  Z/F/G: büyüler  •  Esc: menü"
+		help.text = "WASD yürü  •  Shift koş  •  Boşluk zıpla  •  Fare bak\nSol tık: taso al / boş yuvaya koy / dolu yuvadakini eline al  •  Basılı tutup sürükle: yuvadaki tasoyu taşı\nTekerlek: eldeki tasoyu seç\nQ: seçiliyi fırlat  •  Shift+Q: hepsini fırlat  •  Sağ tık (basılı): yakınlaştır\nTab: gelişim ağacı  •  B: albüm  •  Z/F/G/C: büyüler  •  Esc: menü"
 
 
 func _face_down(i: int) -> bool:
@@ -2794,7 +3125,8 @@ func _taso_name(i: int) -> String:
 func _update_hud() -> void:
 	var total := tasos.size()
 	var s := int(elapsed)
-	hud_stats.text = "Puan: %d      Doğru: %d/%d      Vitrinde: %d      Yerde: %d      Süre: %02d:%02d" % [coins, correct, total, placed, pile_count, floori(s / 60.0), s % 60]
+	var seri := ("      Seri: %d (x%d)" % [streak, _streak_mult()]) if streak > 0 else ""
+	hud_stats.text = ("Puan: %d" + seri + "      Doğru: %d/%d      Vitrinde: %d      Yerde: %d      Süre: %02d:%02d") % [coins, correct, total, placed, pile_count + flying.size(), floori(s / 60.0), s % 60]
 
 	if hand.is_empty():
 		hud_hand.text = "Elde (0/%d)" % _cap()
@@ -3322,6 +3654,22 @@ var fans: Array = []
 # Fırlatılan tasolar: gerçek fizik cismi olarak uçar, durunca yere (pile) geçer
 const FLY_LAYER := 8
 var flying: Array = []                 # [{"i": taso, "body": RigidBody3D, "t": süre}]
+var wake_timer := 0.0
+var rest_until := {}                    # taso -> yeniden uyandırılabileceği an
+const MAX_ACTIVE := 120                 # aynı anda fizik cismi olabilecek en fazla taso
+# Yerleştirme animasyonu: taso elden uçarak yuvasına oturur
+var place_anims: Array = []             # [{"i","from","to","t","ok","g","n"}]
+var sparkle_mesh: QuadMesh
+# Vitrinde sürükle-bırak
+var press_info := {}
+var dragging := false
+# Seri bonusu: art arda yeni ve doğru yerleştirme
+var streak := 0
+# Numara Rehberi etiketleri (bakılan vitrinin boş yuvaları)
+var guide_labels: Array = []
+var guide_g := -1
+var guide_ver := -1
+var guide_hide := 0.0
 var taso_phys: PhysicsMaterial
 const MODEL_FIX := {"steel_frame_shelves_01": [0.1, 0.0], "wooden_display_shelves_01": [1.0, PI / 2]}
 
