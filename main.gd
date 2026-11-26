@@ -200,6 +200,8 @@ var joy_knob: Panel
 # Kayıt ve menü
 static var skip_menu := false        # "Yeni Oyun" sonrası menüyü atlayıp doğrudan başla
 var mouse_sens := 0.0025
+var zooming := false                   # sağ tık / Zoom butonu basılıyken yakınlaştır
+const ZOOM_FOV := 28.0
 var touch_sens := 0.005
 var volume := 0.8
 var loading := false
@@ -1481,7 +1483,10 @@ func _physics_process(delta: float) -> void:
 		_update_flying(delta)
 	if player.global_position.y < -5.0:
 		player.global_position = Vector3(0, 1.0, ROOM_D / 2.0 - 3.0)
-	cam.fov = lerpf(cam.fov, 82.0 if (sprint and mv != Vector2.ZERO) else 75.0, 8.0 * delta)
+	var fov_target := 82.0 if (sprint and mv != Vector2.ZERO) else 75.0
+	if zooming:
+		fov_target = ZOOM_FOV
+	cam.fov = lerpf(cam.fov, fov_target, 12.0 * delta)
 	target = _find_target()
 	_update_hover()
 
@@ -1534,8 +1539,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		_touch_input(event)
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		player.rotate_y(-event.relative.x * mouse_sens)
-		cam.rotation.x = clampf(cam.rotation.x - event.relative.y * mouse_sens, -1.5, 1.5)
+		# yakınlaşınca bakış da o oranda yavaşlar
+		var sens := mouse_sens * cam.fov / 75.0
+		player.rotate_y(-event.relative.x * sens)
+		cam.rotation.x = clampf(cam.rotation.x - event.relative.y * sens, -1.5, 1.5)
+		return
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT:
+		zooming = event.pressed and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 		return
 	if event is InputEventMouseButton and event.pressed:
 		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
@@ -1544,8 +1554,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		match event.button_index:
 			MOUSE_BUTTON_LEFT:
 				_on_use()
-			MOUSE_BUTTON_RIGHT:
-				_drop(false)
 			MOUSE_BUTTON_WHEEL_UP:
 				_cycle(-1)
 			MOUSE_BUTTON_WHEEL_DOWN:
@@ -1556,7 +1564,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_ESCAPE:
 				_open_menu()
 			KEY_Q:
-				_drop(true)
+				_drop(not event.shift_pressed)
 			KEY_TAB:
 				_open_tree()
 			KEY_Z:
@@ -1661,6 +1669,9 @@ func _build_touch_ui(layer: CanvasLayer) -> void:
 	run.toggled.connect(func(on: bool): touch_sprint = on)
 	_touch_button(layer, "Bırak", Vector2(1420, 560), Vector2(150, 110)).pressed.connect(func(): _drop(true))
 	_touch_button(layer, "Hepsini\nbırak", Vector2(1260, 620), Vector2(140, 110)).pressed.connect(func(): _drop(false))
+	var zb := _touch_button(layer, "Zoom", Vector2(1100, 620), Vector2(140, 110))
+	zb.button_down.connect(func(): zooming = true)
+	zb.button_up.connect(func(): zooming = false)
 	_touch_button(layer, "Menü", Vector2(1440, 20), Vector2(140, 70)).pressed.connect(func(): _open_menu())
 	_touch_button(layer, "<", Vector2(20, 110), Vector2(90, 80)).pressed.connect(func(): _cycle(-1))
 	_touch_button(layer, ">", Vector2(120, 110), Vector2(90, 80)).pressed.connect(func(): _cycle(1))
@@ -1725,7 +1736,7 @@ func _on_use() -> void:
 	match kind:
 		"taso":
 			if hand.size() >= _cap():
-				_say("Elin dolu (%d)! Vitrine yerleştir ya da Q / sağ tık ile bırak" % _cap())
+				_say("Elin dolu (%d)! Vitrine yerleştir ya da Q / Shift+Q ile fırlat" % _cap())
 				return
 			_grab(target["idx"])
 		"shelf":
@@ -1896,7 +1907,7 @@ func _check_shelf(g: int) -> void:
 	finished = not shelf_done.has(false)
 
 
-## only_selected: Q yalnızca seçili tasoyu, sağ tık hepsini bırakır.
+## only_selected: Q yalnızca seçili tasoyu, Shift+Q hepsini fırlatır.
 ## Elden fırlat: her taso dönerek uçan bir fizik cismi olur; sekip durduğu yerde (ters ya da düz) kalır.
 func _drop(only_selected: bool) -> void:
 	if hand.is_empty():
@@ -2686,6 +2697,7 @@ func _slider(parent: Node, title: String, lo: float, hi: float, value: float, on
 func _open_menu() -> void:
 	if menu_layer == null or menu_layer.visible:
 		return
+	zooming = false
 	menu_layer.visible = true
 	menu_main.visible = true
 	menu_settings.visible = false
@@ -2767,7 +2779,7 @@ func _build_hud() -> void:
 		_build_touch_ui(layer)
 	_build_tutorial(layer)
 	if not touch_mode:
-		help.text = "WASD yürü  •  Shift koş  •  Boşluk zıpla  •  Fare bak\nSol tık: taso al / boş yuvaya koy / dolu yuvadakini eline al\nTekerlek: eldeki tasoyu seç\nQ: seçiliyi bırak  •  Sağ tık: hepsini bırak\nTab: gelişim ağacı  •  B: albüm  •  Z/F/G: büyüler  •  Esc: menü"
+		help.text = "WASD yürü  •  Shift koş  •  Boşluk zıpla  •  Fare bak\nSol tık: taso al / boş yuvaya koy / dolu yuvadakini eline al\nTekerlek: eldeki tasoyu seç\nQ: seçiliyi fırlat  •  Shift+Q: hepsini fırlat  •  Sağ tık (basılı): yakınlaştır\nTab: gelişim ağacı  •  B: albüm  •  Z/F/G: büyüler  •  Esc: menü"
 
 
 func _face_down(i: int) -> bool:

@@ -49,7 +49,8 @@ Her `main` push'unda GitHub Actions web build alıp GitHub Pages'e yayınlar: ht
 - **WASD:** yürü, **Shift:** koş, **Boşluk:** zıpla, **fare:** bak
 - **Sol tık:** yerden taso al / seçili tasoyu boş yuvaya koy / dolu yuvadaki tasoyu eline al (bir yuvada tek taso olur)
 - **Fare tekerleği:** eldeki tasolar arasında seçim yap
-- **Q:** seçili tasoyu bırak, **sağ tık:** elindekilerin hepsini bırak
+- **Q:** seçili tasoyu fırlat, **Shift+Q:** elindekilerin hepsini fırlat (fizikle seker, ters düşebilir)
+- **Sağ tık (basılı tut):** yakınlaştır (zoom); telefonda Zoom butonu
 - **Tab:** gelişim ağacı, **B:** albüm, **Z / F / G:** büyüler, **H:** rehberi geç
 - **Esc:** menü (telefonda sağ üstteki Menü butonu)
 
