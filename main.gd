@@ -215,7 +215,7 @@ var tree_buttons := {}
 # Dükkân dönüşümü: düzen arttıkça ışık, renk, toz
 var env: Environment
 var hi_gfx := false                   # Forward+ (Windows): gerçek gölge, dolaylı ışık, sis
-var adv_light := true                 # ayarlardan kapatılabilir
+var adv_light := false                # dolaylı ışık + sis: ayarlardan açılır
 var shelf_lights: Array = []
 var sun: DirectionalLight3D
 var lamps: Array = []
@@ -881,9 +881,10 @@ func _apply_gfx() -> void:
 	env.sdfgi_min_cell_size = 0.2
 	env.sdfgi_cascades = 4
 	env.sdfgi_bounce_feedback = 0.45
+	env.sdfgi_energy = 1.2
 	env.ssao_enabled = true
 	env.ssao_radius = 1.0
-	env.ssao_intensity = 1.6
+	env.ssao_intensity = 1.0
 	env.ssil_enabled = adv_light
 	env.volumetric_fog_enabled = adv_light
 	env.volumetric_fog_density = 0.006
@@ -992,7 +993,9 @@ func _slope_box(parent: Node, size: Vector3, a: Vector3, b: Vector3, up_off: flo
 ## Tavandan sarkan sarkıt lamba (kablo, abajur, parlayan ampul)
 func _pendant_lamp(pos: Vector3) -> float:
 	var top := BUILD_H if pos.y > MEZZ_Y + 1.0 else MEZZ_Y - 0.3
-	if _prop("hanging_industrial_lamp", Vector3(pos.x, top, pos.z), 0.0, "ceiling", false, 1.0 if top > MEZZ_Y else 0.55) != null:
+	var lp := _prop("hanging_industrial_lamp", Vector3(pos.x, top, pos.z), 0.0, "ceiling", false, 1.0 if top > MEZZ_Y else 0.55)
+	if lp != null:
+		_no_shadows(lp)
 		return top - last_prop_size.y
 	var cord_len := maxf(top - pos.y, 0.1)
 	_cyl(self, 0.01, cord_len, pos + Vector3(0, cord_len / 2.0, 0), Color("202020"), false)
@@ -1116,7 +1119,7 @@ func _build_vitrine(g: int, pos: Vector3, rot: float) -> void:
 	# camın üstündeki toz: vitrin doğru doldukça silinir
 	var dm := StandardMaterial3D.new()
 	dm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	dm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	dm.roughness = 1.0
 	dm.albedo_texture = _dust_texture()
 	dm.albedo_color = Color(0.78, 0.72, 0.62, 0.3)
 	dm.uv1_offset = Vector3(randf(), randf(), 0)
@@ -2348,7 +2351,7 @@ func _load_settings() -> void:
 			music_vol = float(d.get("music", music_vol))
 			sfx_vol = float(d.get("sfx", sfx_vol))
 			render_scale = float(d.get("scale", render_scale))
-			adv_light = bool(d.get("adv", adv_light))
+			adv_light = bool(d.get("adv2", adv_light))
 	_apply_volumes()
 	get_viewport().scaling_3d_scale = render_scale
 
@@ -2356,7 +2359,7 @@ func _load_settings() -> void:
 func _save_settings() -> void:
 	var f := FileAccess.open(SETTINGS_PATH, FileAccess.WRITE)
 	if f != null:
-		f.store_string(JSON.stringify({"mouse": mouse_sens, "touch": touch_sens, "volume": volume, "music": music_vol, "sfx": sfx_vol, "scale": render_scale, "adv": adv_light}))
+		f.store_string(JSON.stringify({"mouse": mouse_sens, "touch": touch_sens, "volume": volume, "music": music_vol, "sfx": sfx_vol, "scale": render_scale, "adv2": adv_light}))
 		f.close()
 
 
@@ -2796,7 +2799,7 @@ func _noise_tex(freq: float, seed_v: int, points: Array) -> NoiseTexture2D:
 
 func _dust_texture() -> NoiseTexture2D:
 	if dust_tex == null:
-		dust_tex = _noise_tex(0.09, 3, [[0.0, Color(1, 1, 1, 0.0)], [0.55, Color(1, 1, 1, 0.15)], [1.0, Color(1, 1, 1, 0.9)]])
+		dust_tex = _noise_tex(0.035, 3, [[0.0, Color(1, 1, 1, 0.0)], [0.5, Color(1, 1, 1, 0.2)], [1.0, Color(1, 1, 1, 0.7)]])
 	return dust_tex
 
 
@@ -2896,17 +2899,17 @@ func _update_order(delta: float) -> void:
 	if absf(order_vis - order_applied) > 0.0005:
 		order_applied = order_vis
 		var e := pow(order_vis, 0.6)
-		if hi_gfx:
-			env.ambient_light_energy = lerpf(0.08, 0.18, e)
+		if hi_gfx and adv_light:
+			env.ambient_light_energy = lerpf(0.3, 0.5, e)
 		else:
-			env.ambient_light_energy = lerpf(0.34, 0.6, e)
+			env.ambient_light_energy = lerpf(0.36, 0.62, e)
 		env.adjustment_saturation = lerpf(0.72, 1.04, e)
 		env.adjustment_brightness = lerpf(0.88, 1.0, e)
-		sun.light_energy = lerpf(1.5, 2.3, e) if hi_gfx else lerpf(0.3, 0.6, e)
+		sun.light_energy = lerpf(0.8, 1.2, e) if hi_gfx else lerpf(0.3, 0.6, e)
 		var lc := Color(1.0, 0.82, 0.62).lerp(Color(1.0, 0.94, 0.84), e)
 		for lamp in lamps:
 			var l: OmniLight3D = lamp
-			l.light_energy = lerpf(1.0, 2.2, e) if hi_gfx else lerpf(0.95, 1.55, e)
+			l.light_energy = lerpf(1.4, 2.2, e) if hi_gfx else lerpf(0.95, 1.55, e)
 			l.light_color = lc
 		dust_mat.albedo_color.a = lerpf(0.65, 0.05, e)
 		dirt_mat.albedo_color.a = lerpf(0.75, 0.0, e)
@@ -2924,7 +2927,7 @@ func _shelf_look(g: int, good: int, done: bool) -> void:
 	var lm: StandardMaterial3D = shelf_led_mats[g]
 	lm.albedo_color = Color(1.0, 0.98, 0.9) if done else Color(0.2, 0.18, 0.15).lerp(Color("fff3d6"), sqrt(fr))
 	var dm: StandardMaterial3D = shelf_dust_mats[g]
-	dm.albedo_color.a = 0.2 * pow(1.0 - fr, 1.4)
+	dm.albedo_color.a = 0.12 * pow(1.0 - fr, 1.4)
 	if shelf_lights[g] != null:
 		var sp: SpotLight3D = shelf_lights[g]
 		sp.light_energy = 2.0 if done else lerpf(0.08, 1.3, sqrt(fr))
@@ -3289,6 +3292,16 @@ func _prop(id: String, pos: Vector3, yaw: float = 0.0, anchor: String = "floor",
 	return holder
 
 
+func _no_shadows(root: Node) -> void:
+	var stack: Array = [root]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		for ch in n.get_children():
+			stack.append(ch)
+		if n is GeometryInstance3D:
+			(n as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+
 func _local_aabb(root: Node, holder: Node3D) -> AABB:
 	var inv := holder.global_transform.affine_inverse()
 	var out := AABB()
@@ -3388,8 +3401,11 @@ func _furnish() -> void:
 	for fp in [Vector3(-12, BUILD_H, 2), Vector3(12, BUILD_H, 2), Vector3(0, BUILD_H, 14)]:
 		var f := _prop("ceiling_fan", fp, 0.0, "ceiling", false)
 		if f != null:
+			_no_shadows(f)
 			fans.append(f)
-	if _prop("Chandelier_01", Vector3(0, BUILD_H, 20.5), 0.0, "ceiling", false) != null:
+	var chand := _prop("Chandelier_01", Vector3(0, BUILD_H, 20.5), 0.0, "ceiling", false)
+	if chand != null:
+		_no_shadows(chand)
 		var cl := OmniLight3D.new()
 		cl.position = Vector3(0, BUILD_H - last_prop_size.y - 0.1, 20.5)
 		cl.omni_range = 9.0
