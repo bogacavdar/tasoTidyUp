@@ -1969,7 +1969,7 @@ func _try_buy(key: String) -> bool:
 func _selected_grp() -> int:
 	if not hand.is_empty():
 		return int(tasos[hand[sel]]["grp"])
-	if target.get("kind", "") == "taso":
+	if target.get("kind", "") == "taso" and not _face_down(target["idx"]):
 		return int(tasos[target["idx"]]["grp"])
 	return -1
 
@@ -2770,6 +2770,10 @@ func _build_hud() -> void:
 		help.text = "WASD yürü  •  Shift koş  •  Boşluk zıpla  •  Fare bak\nSol tık: taso al / boş yuvaya koy / dolu yuvadakini eline al\nTekerlek: eldeki tasoyu seç\nQ: seçiliyi bırak  •  Sağ tık: hepsini bırak\nTab: gelişim ağacı  •  B: albüm  •  Z/F/G: büyüler  •  Esc: menü"
 
 
+func _face_down(i: int) -> bool:
+	return in_pile[i] and pile_xf[i].basis.y.y < 0.0
+
+
 func _taso_name(i: int) -> String:
 	var t: Dictionary = tasos[i]
 	return "%s %d%s" % [SETS[t["grp"]]["code"], t["num"], ""]
@@ -2796,9 +2800,13 @@ func _update_hud() -> void:
 	match kind:
 		"taso":
 			var i: int = target["idx"]
-			var g: int = tasos[i]["grp"]
-			var set_txt: String = SETS[g]["name"]
-			hud_info.text = "%s   (%s)" % [_taso_name(i), set_txt]
+			if _face_down(i):
+				# ters duran tasonun kimliği ancak eline alınca görünür
+				hud_info.text = "Ters duran taso"
+			else:
+				var g: int = tasos[i]["grp"]
+				var set_txt: String = SETS[g]["name"]
+				hud_info.text = "%s   (%s)" % [_taso_name(i), set_txt]
 		"shelf":
 			var body: Node = target["body"]
 			var g: int = body.get_meta("grp")
