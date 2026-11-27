@@ -1182,7 +1182,6 @@ func _rebuild_shafts() -> void:
 			_light_shaft(w)
 		elif w.size() > 2:
 			(w[2] as Node3D).visible = false
-			(w[3] as Node3D).visible = false
 
 
 ## Huzmelerin gün içindeki gücü: güneş alçakken ve öğleden sonra en belirgin, gece yok
@@ -1203,7 +1202,6 @@ func _light_shaft(w: Array) -> void:
 	if dir.dot(inward) < 0.15 or dir.y > -0.05:
 		if w.size() > 2:
 			(w[2] as Node3D).visible = false
-			(w[3] as Node3D).visible = false
 		return
 	if shaft_mat == null:
 		shaft_mat = ShaderMaterial.new()
@@ -1245,11 +1243,9 @@ func _light_shaft(w: Array) -> void:
 		var p1: Vector3 = (ends[0] as Vector3).lerp(ends[1], u).lerp((ends[3] as Vector3).lerp(ends[2], u), randf())
 		pts.append(p0.lerp(p1, v * 0.85))
 	if w.size() > 2:
-		# var olan huzmeyi güncelle: yeni düğüm, yeni ön hesaplama yok
+		# var olan huzmeyi güncelle: yeni düğüm yok
 		(w[2] as MeshInstance3D).mesh = st.commit()
 		(w[2] as Node3D).visible = true
-		(w[3] as CPUParticles3D).emission_points = pts
-		(w[3] as Node3D).visible = true
 		return
 	var mi := MeshInstance3D.new()
 	mi.mesh = st.commit()
@@ -1257,53 +1253,7 @@ func _light_shaft(w: Array) -> void:
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mi)
 	shaft_nodes.append(mi)
-	# huzmenin içinde ağır ağır süzülen toz zerrecikleri
-	if mote_mat == null:
-		mote_mat = StandardMaterial3D.new()
-		mote_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		mote_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-		mote_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		mote_mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
-		mote_mat.albedo_color = Color(1.0, 0.95, 0.82, 0.6)
-		var g := GradientTexture2D.new()
-		g.fill = GradientTexture2D.FILL_RADIAL
-		g.fill_from = Vector2(0.5, 0.5)
-		g.fill_to = Vector2(1.0, 0.5)
-		var gr := Gradient.new()
-		gr.set_color(0, Color(1, 1, 1, 1))
-		gr.set_color(1, Color(1, 1, 1, 0))
-		g.gradient = gr
-		g.width = 16
-		g.height = 16
-		mote_mat.albedo_texture = g
-	var qm := QuadMesh.new()
-	qm.size = Vector2(0.03, 0.03)
-	qm.material = mote_mat
-	var cp := CPUParticles3D.new()
-	cp.mesh = qm
-	cp.amount = 48
-	cp.lifetime = 9.0
-	cp.preprocess = 9.0
-	cp.local_coords = false
-	cp.emission_shape = CPUParticles3D.EMISSION_SHAPE_POINTS
-	cp.emission_points = pts
-	cp.direction = Vector3(0, 1, 0)
-	cp.spread = 180.0
-	cp.initial_velocity_min = 0.01
-	cp.initial_velocity_max = 0.06
-	cp.gravity = Vector3(0, -0.004, 0)
-	cp.scale_amount_min = 0.5
-	cp.scale_amount_max = 1.4
-	var cr := Curve.new()
-	cr.add_point(Vector2(0, 0))
-	cr.add_point(Vector2(0.2, 1))
-	cr.add_point(Vector2(0.8, 1))
-	cr.add_point(Vector2(1, 0))
-	cp.scale_amount_curve = cr
-	add_child(cp)
-	shaft_nodes.append(cp)
 	w.append(mi)
-	w.append(cp)
 
 
 ## Bir merdiven kolu: verilen x'te, zemin kattan (z = STAIR_Z0) asma kat kenarına (z = MEZZ_EDGE_Z) çıkar.
@@ -1606,6 +1556,9 @@ func _update_title(g: int) -> void:
 
 func _build_player() -> void:
 	player = CharacterBody3D.new()
+	# oyuncu ayrı katmanda: fırlatılan tasolar gövdeye çarpıp zemine sıkışmasın
+	player.collision_layer = 2
+	player.collision_mask = 1
 	player.position = Vector3(0, 0.95, ROOM_D / 2.0 - 3.0)
 	var cs := CollisionShape3D.new()
 	var cap := CapsuleShape3D.new()
@@ -1789,7 +1742,7 @@ func _put_in_pile(i: int, xf: Transform3D) -> void:
 func _throw(i: int, k: int, n: int, fwd: Vector3, cb: Basis) -> void:
 	if taso_phys == null:
 		taso_phys = PhysicsMaterial.new()
-		taso_phys.bounce = 0.35
+		taso_phys.bounce = 0.22
 		taso_phys.friction = 0.75
 	var body := _new_taso_body()
 	# elden çıkış: tasonun yüzü kameraya dönük, birden fazlaysa hafif dağınık
@@ -1820,6 +1773,8 @@ func _update_flying(delta: float) -> void:
 		e["t"] = float(e["t"]) + delta
 		var xf := body.global_transform
 		_pile_xf(i, xf)
+		_floor_guard(body)
+		xf = body.global_transform
 		var quiet: bool = e.get("quiet", false)
 		if e.has("trail"):
 			(e["trail"] as CPUParticles3D).emitting = body.linear_velocity.length() > 1.2
@@ -1832,6 +1787,30 @@ func _update_flying(delta: float) -> void:
 		var limit := 2.5 if quiet else 6.0
 		if body.sleeping or float(e["slow"]) > 0.35 or float(e["t"]) > limit or xf.origin.y < -3.0:
 			_land(k)
+
+
+## İnce taso hızlıyken bir adımda kalınlığından fazla yol alıp zeminin içine girebiliyor; fizik motoru onu
+## oradan çıkaramıyor. Her adımda alttaki yüzeyi ışınla bul, altına inmişse yüzeye çıkar ve sektir.
+func _floor_guard(body: RigidBody3D) -> void:
+	var v := body.linear_velocity
+	if v.length_squared() < 0.0025:
+		return
+	var xf := body.global_transform
+	var up := xf.basis.y.normalized()
+	var tilt := sqrt(maxf(0.0, 1.0 - up.y * up.y))
+	var half := absf(up.y) * 0.006 + tilt * TASO_R   # merkezden en alt noktaya dikey mesafe
+	var q := PhysicsRayQueryParameters3D.create(xf.origin + Vector3.UP * 0.4, xf.origin + Vector3.DOWN * 0.4)
+	q.collision_mask = 1
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty():
+		return
+	var top: float = hit["position"].y
+	if xf.origin.y - half < top - 0.001:
+		xf.origin.y = top + half
+		body.global_transform = xf
+		if v.y < 0.0:
+			v.y = -v.y * 0.22
+			body.linear_velocity = v
 
 
 ## Hareket eden tasoların yakınındaki yerdeki tasolar da fizik cismi olur: çarpışır, itilir, üst üste yığılır
@@ -1863,20 +1842,29 @@ func _wake_near_flying() -> void:
 func _new_taso_body() -> RigidBody3D:
 	if taso_phys == null:
 		taso_phys = PhysicsMaterial.new()
-		taso_phys.bounce = 0.35
+		taso_phys.bounce = 0.22
 		taso_phys.friction = 0.75
 	var body := RigidBody3D.new()
 	body.mass = 0.02
 	body.collision_layer = FLY_LAYER
 	body.collision_mask = 1 | FLY_LAYER
-	body.continuous_cd = true
+	# merkez tabanlı sürekli çarpışma ince tasoyu zeminin yarısına kadar sokuyordu: kapalı
+	body.continuous_cd = false
 	body.physics_material_override = taso_phys
 	body.angular_damp = 0.4
 	var cs := CollisionShape3D.new()
-	var sh := CylinderShape3D.new()
-	sh.radius = TASO_R
-	sh.height = maxf(TASO_H, 0.012)
-	cs.shape = sh
+	# silindir şekli Godot fiziğinde ince cisimlerde kararsız: 16 köşeli dışbükey prizma kullan
+	if taso_shape == null:
+		taso_shape = ConvexPolygonShape3D.new()
+		var pts := PackedVector3Array()
+		var hh := maxf(TASO_H, 0.012) / 2.0
+		for k in 16:
+			var a := TAU * k / 16.0
+			pts.append(Vector3(cos(a) * TASO_R, hh, sin(a) * TASO_R))
+			pts.append(Vector3(cos(a) * TASO_R, -hh, sin(a) * TASO_R))
+		taso_shape.points = pts
+		taso_shape.margin = 0.002
+	cs.shape = taso_shape
 	body.add_child(cs)
 	add_child(body)
 	return body
@@ -3902,7 +3890,7 @@ func _build_atmosphere() -> void:
 	motes.initial_velocity_max = 0.14
 	motes.scale_amount_min = 0.5
 	motes.scale_amount_max = 1.4
-	add_child(motes)
+	motes.queue_free()   # havada süzülen zerreler kaldırıldı (kar gibi duruyordu)
 
 	# yerde kir lekeleri
 	dirt_mat = StandardMaterial3D.new()
@@ -4536,6 +4524,7 @@ const FLY_LAYER := 8
 var flying: Array = []                 # [{"i": taso, "body": RigidBody3D, "t": süre}]
 var wake_timer := 0.0
 var rest_until := {}
+var taso_shape: ConvexPolygonShape3D
 # Vitrin görünümü
 const VGLASS_SHADER := """shader_type spatial;
 render_mode blend_mix, depth_draw_never, cull_back;

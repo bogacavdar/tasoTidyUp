@@ -71,7 +71,7 @@ float aa(float d) {
 // ---------------- Taso yüzü ----------------
 void fragment() {
 	// kenar ve yan yüz: koyu, set rengi yok
-	vec3 base = vec3(0.1, 0.092, 0.085);
+	vec3 base = vec3(0.86, 0.83, 0.76);
 	float gloss = 0.0;
 	float holo = inst.y;
 	if (face < -0.5) {
@@ -122,18 +122,7 @@ void fragment() {
 		float ink = draw_number(uv, num, nc, 0.058, 0.085);
 		base = mix(base, vec3(1.0), ink * disc);
 
-		// cilalı baskı: bakış açısıyla yüzeyde kayan ince bir parıltı ve kenarlara doğru yansıma
-		vec3 r = reflect(-VIEW, NORMAL);
-		float band = sin(r.x * 7.0 + r.y * 5.0 + (wpos.x + wpos.z) * 9.0 + (uv.x + uv.y) * 2.5);
-		float glint = smoothstep(0.86, 1.0, band) * 0.22 + smoothstep(0.6, 1.0, band) * 0.05;
-		float fres = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 4.0);
-		gloss = (glint + fres * 0.18) * disc;
 
-		// kenar kabartması: resmin hemen dışında incecik bir hat; sol üst ışık alır, sağ alt gölgede kalır
-		vec2 dir2 = (uv - 0.5) / max(d, 0.001);
-		float lit = 0.5 + 0.5 * dot(dir2, normalize(vec2(-0.6, -0.8)));
-		float lip = smoothstep(DISC + 0.001, DISC + 0.005, d) * (1.0 - smoothstep(0.494, 0.499, d));
-		base = mix(base, mix(vec3(0.05, 0.045, 0.04), vec3(0.62, 0.58, 0.52), lit), lip * 0.85);
 	}
 	if (holo > 0.5) {
 		float h = fract(TIME * 0.3 + face_uv.x * 0.8 + face_uv.y * 0.5);
@@ -144,7 +133,8 @@ void fragment() {
 	ALBEDO = base;
 	EMISSION += vec3(1.0, 0.98, 0.94) * gloss;
 	// ön yüz cilalı (parlak), kenar ve arka yüz daha mat
-	ROUGHNESS = face > 0.5 ? 0.24 : (face < -0.5 ? 0.45 : 0.32);
+	// mat yüzey: parlama yok
+	ROUGHNESS = 0.7;
 	METALLIC = 0.0;
-	SPECULAR = face > 0.5 ? 0.7 : 0.5;
+	SPECULAR = 0.3;
 }
