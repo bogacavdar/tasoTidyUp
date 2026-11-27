@@ -1,4 +1,4 @@
-# Taso Kaosu (çalışma adı)
+# Full Set: Collector's Shop
 
 
 > **Şimdilik:** Yerde yalnızca ComfyUI + Z-Image Turbo ile çizilmiş **Kor Vadisi** setinin 150 tasosu var. 34 vitrinin hepsi duruyor; diğer setlerin çizimleri üretildikçe `ACTIVE_SETS` (main.gd) artırılıp eklenecek.
@@ -7,7 +7,7 @@ Godot ile yapılan bir "kaostan düzene" toplu dizme oyunu. Oyuncu birinci şah�
 ## Şu anki durum: Taso dükkânı
 
 - **Bina:** 70×50 m'lik bir taso dükkânı.
-  - Ön duvarda açık cam kapı, "TASO DÜKKÂNI" tabelası, dışarıda kaldırım.
+  - Ön duvarda açık cam kapı, "FULL SET" tabelası, dışarıda kaldırım.
   - Vitrin camları ve pencereler, kapının yanında bir kasa.
   - Sağda ve solda iki kollu (U şeklinde) malikane merdiveniyle çıkılan, cam korkuluklu bir asma kat.
 - **34 adet 3D vitrin:**
@@ -29,7 +29,7 @@ Godot ile yapılan bir "kaostan düzene" toplu dizme oyunu. Oyuncu birinci şah�
 - **İlk açılış rehberi:** Yeni oyunda 7 adımlık kısa bir rehber: taso alma, seçme, vitrini bulma, numara sırası, kırmızı halka ve puanlar, gelişim ağacı. H ile ya da telefonda "Rehberi geç" ile atlanır; Ayarlar'dan baştan gösterilir.
 - **Gelişim ağacı (Tab):** Taşıma ve hareket (El Kapasitesi, Avuç, Hız), Görüş (Sezgi, Vitrin Pusulası, Numara Rehberi), Büyüler (Toplama, Otomatik Dizme, Ayıklama, Çevirme). Büyüler bekleme sürelidir: Z Sezgi, F Toplama, G Ayıklama, C Çevirme. Numara Rehberi vitrine bakınca boş yuvalarda soluk numara gösterir; Çevirme çevredeki ters tasoları düz çevirir.
 - **Seri bonusu:** Art arda ilk kez doğru yerleştirdiğin her 5 taso puanı katlar (5'te x2, 10'da x3). Yanlış yerleştirme seriyi sıfırlar.
-- **Görünüm:** Tasoların ön yüzü cilalı, bakış açısıyla üstünde parıltı kayar. Vitrin camı yansır, yuvalar kadifede çukur görünür, LED ışığı doluluğa göre fona vurur. Set tamamlanınca yuvalarda altın bir ışık dalgası akar. Dükkânda bazı lambalar arızalı titrer ve düzen arttıkça düzelir; asma katın önündeki "TASO DÜKKÂNI" neonu %10 düzende tam yanar. Pencerelerden gün ışığı huzmeleri düşer. Duvarlarda Kor Vadisi posterleri, girişte taso standı var.
+- **Görünüm:** Tasoların ön yüzü cilalı, bakış açısıyla üstünde parıltı kayar. Vitrin camı yansır, yuvalar kadifede çukur görünür, LED ışığı doluluğa göre fona vurur. Set tamamlanınca yuvalarda altın bir ışık dalgası akar. Dükkânda bazı lambalar arızalı titrer ve düzen arttıkça düzelir; asma katın önündeki "FULL SET" neonu %10 düzende tam yanar. Pencerelerden gün ışığı huzmeleri düşer. Duvarlarda Kor Vadisi posterleri, girişte taso standı var.
 - **Ana ekran ve yükleme:** Oyun ana ekranla açılır (Devam Et / Yeni Oyun / Çıkış). Seçimden sonra modeller ve dokular arka planda yüklenir, dükkân perde arkasında kurulur ve shader'lar önceden derlenir; oyun hazır olunca açılır.
 - **Gün döngüsü ve dış mekân:** 20 dakikada bir gün geçer: sabah, öğle, akşamüstü turuncu ışık, kısa bir gece. Güneş huzmeleri pencerelerden yönünü değiştirerek düşer, içlerinde toz süzülür. Gece içerisi aydınlık kalır; dışarıda bina pencereleri ve sokak lambaları yanar. Sokakta ağaçlar, lambalar ve banklar var.
 - **Işık:** Windows'ta zemin ve cam yansır (ekran uzayı yansıma). Telefon ve web'de duvar diplerinde ve vitrin altlarında yumuşak gölge var.
@@ -37,7 +37,7 @@ Godot ile yapılan bir "kaostan düzene" toplu dizme oyunu. Oyuncu birinci şah�
 
 ### İndir
 
-- **Windows ve Android:** [Releases → Son sürüm](https://github.com/bogacavdar/tasoTidyUp/releases/tag/son-surum). Her `main` push'unda otomatik güncellenir. Windows için zip'i aç ve `TasoDukkani.exe`'yi çalıştır. Android için `.apk`'yı kur (64 bit ve 32 bit ARM telefonlarda çalışır). APK'lar depodaki sabit test anahtarıyla (`android/test.keystore`) imzalanır, böylece güncellemeler eskisinin üstüne kurulur. Bu anahtar yalnızca test dağıtımı içindir; Google Play'e çıkarken gizli tutulan ayrı bir yükleme anahtarı kullanılmalı.
+- **Windows ve Android:** [Releases → Son sürüm](https://github.com/bogacavdar/tasoTidyUp/releases/tag/son-surum). Her `main` push'unda otomatik güncellenir. Windows için zip'i aç ve `FullSet.exe`'yi çalıştır. Android için `.apk`'yı kur (64 bit ve 32 bit ARM telefonlarda çalışır). APK'lar depodaki sabit test anahtarıyla (`android/test.keystore`) imzalanır, böylece güncellemeler eskisinin üstüne kurulur. Bu anahtar yalnızca test dağıtımı içindir; Google Play'e çıkarken gizli tutulan ayrı bir yükleme anahtarı kullanılmalı.
 - **Telefonda kontroller:** Sol taraf sanal joystick. Sağ tarafı sürükleyince bakış döner, kısa dokununca taso alınır veya yerleştirilir. Zıpla, Koş, Bırak, < >, Ağaç ve açılan büyüler için butonlar da var. Telefonda görüntü çözünürlüğü varsayılan olarak %80'dir, parlama efekti kapalıdır; Ayarlar'dan değiştirilebilir.
 
 ### Tarayıcıda oyna

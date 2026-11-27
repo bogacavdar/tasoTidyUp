@@ -746,7 +746,7 @@ func _build_world() -> void:
 		var board := _mesh_box(self, Vector3(9.0, 1.4, 0.12), Vector3(0, DOOR_H + 1.3, sign_z), _mat(Color("8a1f2b")))
 		board.position.z = sign_z
 		var sl := Label3D.new()
-		sl.text = "TASO DÜKKÂNI"
+		sl.text = "FULL SET"
 		sl.font_size = 96
 		sl.pixel_size = 0.01
 		sl.outline_size = 16
@@ -3308,7 +3308,7 @@ func _build_menu(has_save: bool) -> void:
 	menu_main.size = Vector2(1600, 900)
 	menu_layer.add_child(menu_main)
 	var box := _menu_box(menu_main)
-	_menu_label(box, "TASO DÜKKÂNI", 56, Color("ffd36b"))
+	_menu_label(box, "FULL SET", 56, Color("ffd36b"))
 	menu_stats = _menu_label(box, "", 18, Color(1, 1, 1, 0.8))
 	btn_continue = _menu_button(box, "Devam Et" if has_save else "Oyuna Başla")
 	btn_continue.pressed.connect(_close_menu)
@@ -4813,7 +4813,7 @@ func _shop_decor() -> void:
 	var hd := ROOM_D / 2.0
 	# neon tabela: asma katın ön kenarında, girişten bakınca karşıda
 	neon_label = Label3D.new()
-	neon_label.text = "TASO DÜKKÂNI"
+	neon_label.text = "FULL SET"
 	neon_label.font_size = 96
 	neon_label.pixel_size = 0.0115
 	neon_label.outline_size = 28

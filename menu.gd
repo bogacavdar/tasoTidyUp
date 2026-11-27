@@ -53,6 +53,7 @@ const TIPS := [
 
 
 func _ready() -> void:
+	_migrate_old_save()
 	layer = CanvasLayer.new()
 	layer.layer = 100
 	add_child(layer)
@@ -80,9 +81,9 @@ void fragment() {
 	title_box.size = Vector2(600, 520)
 	title_box.add_theme_constant_override("separation", 14)
 	root_ui.add_child(title_box)
-	var t := _label(title_box, "TASO DÜKKÂNI", 84, Color("ffd36b"))
+	var t := _label(title_box, "FULL SET", 96, Color("ffd36b"))
 	t.add_theme_constant_override("outline_size", 14)
-	_label(title_box, "Kor Vadisi", 26, Color(1.0, 0.85, 0.7, 0.85))
+	_label(title_box, "COLLECTOR'S SHOP", 28, Color(1.0, 0.85, 0.7, 0.9))
 	var sp := Control.new()
 	sp.custom_minimum_size = Vector2(0, 30)
 	title_box.add_child(sp)
@@ -129,6 +130,19 @@ void fragment() {
 		btn_cont.grab_focus()
 	else:
 		btn_new.grab_focus()
+
+
+## Oyunun adı "Taso Dükkânı"yken kayıt ve ayarlar o adla açılmış klasördeydi; yeni klasörde yoksa oradan kopyala
+func _migrate_old_save() -> void:
+	var new_dir := OS.get_user_data_dir()
+	var old_dir := new_dir.get_base_dir().path_join("Taso Dükkânı")
+	if old_dir == new_dir or not DirAccess.dir_exists_absolute(old_dir):
+		return
+	for f in ["kayit.json", "ayarlar.json"]:
+		var src := old_dir.path_join(f)
+		var dst := new_dir.path_join(f)
+		if FileAccess.file_exists(src) and not FileAccess.file_exists(dst):
+			DirAccess.copy_absolute(src, dst)
 
 
 func _label(parent: Node, text: String, size: int, col: Color) -> Label:

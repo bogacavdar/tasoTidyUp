@@ -69,16 +69,16 @@ jobs:
       - name: Windows export
         run: |
           mkdir -p build/windows
-          ./godot --headless --export-release "Windows" build/windows/TasoDukkani.exe
-          test -f build/windows/TasoDukkani.exe
-          cd build/windows && zip -q -r ../TasoDukkani-Windows.zip .
+          ./godot --headless --export-release "Windows" build/windows/FullSet.exe
+          test -f build/windows/FullSet.exe
+          cd build/windows && zip -q -r ../FullSet-Windows.zip .
 
       - name: Android export
         run: |
           mkdir -p build/android
-          ./godot --headless --export-release "Android" build/android/TasoDukkani.apk
-          test -f build/android/TasoDukkani.apk
-          cp build/android/TasoDukkani.apk build/TasoDukkani-Android.apk
+          ./godot --headless --export-release "Android" build/android/FullSet.apk
+          test -f build/android/FullSet.apk
+          cp build/android/FullSet.apk build/FullSet-Android.apk
 
       - name: GitHub Release'i güncelle
         env:
@@ -87,11 +87,11 @@ jobs:
           SHORT=$(git rev-parse --short HEAD)
           gh release delete son-surum --cleanup-tag -y || true
           gh release create son-surum \
-            build/TasoDukkani-Windows.zip build/TasoDukkani-Android.apk \
+            build/FullSet-Windows.zip build/FullSet-Android.apk \
             --title "Son sürüm ($SHORT)" \
             --notes "main dalındaki son değişikliklerden otomatik oluşturuldu ($SHORT).
 
-          - **Windows:** TasoDukkani-Windows.zip dosyasını indir, klasöre çıkar, TasoDukkani.exe'yi çalıştır. İmzasız olduğu için SmartScreen uyarı verirse 'Ek bilgi' > 'Yine de çalıştır'.
-          - **Android:** TasoDukkani-Android.apk dosyasını telefona indir ve kur (bilinmeyen kaynaklara izin vermen gerekebilir). Bu sürümden itibaren güncellemeler eskisinin üstüne kurulur (bir kereliğine, f85ec9b ve öncesi bir sürüm yüklüyse önce onu kaldır).
+          - **Windows:** FullSet-Windows.zip dosyasını indir, klasöre çıkar, FullSet.exe'yi çalıştır. İmzasız olduğu için SmartScreen uyarı verirse 'Ek bilgi' > 'Yine de çalıştır'.
+          - **Android:** FullSet-Android.apk dosyasını telefona indir ve kur (bilinmeyen kaynaklara izin vermen gerekebilir). Bu sürümden itibaren güncellemeler eskisinin üstüne kurulur (bir kereliğine, f85ec9b ve öncesi bir sürüm yüklüyse önce onu kaldır).
           - **Tarayıcı:** https://bogacavdar.github.io/tasoTidyUp/" \
             --prerelease --target "$GITHUB_SHA"
