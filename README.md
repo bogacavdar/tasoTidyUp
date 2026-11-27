@@ -30,6 +30,8 @@ Godot ile yapılan bir "kaostan düzene" toplu dizme oyunu. Oyuncu birinci şah�
 - **Gelişim ağacı (Tab):** Taşıma ve hareket (El Kapasitesi, Avuç, Hız), Görüş (Sezgi, Vitrin Pusulası, Numara Rehberi), Büyüler (Toplama, Otomatik Dizme, Ayıklama, Çevirme). Büyüler bekleme sürelidir: Z Sezgi, F Toplama, G Ayıklama, C Çevirme. Numara Rehberi vitrine bakınca boş yuvalarda soluk numara gösterir; Çevirme çevredeki ters tasoları düz çevirir.
 - **Seri bonusu:** Art arda ilk kez doğru yerleştirdiğin her 5 taso puanı katlar (5'te x2, 10'da x3). Yanlış yerleştirme seriyi sıfırlar.
 - **Görünüm:** Tasoların ön yüzü cilalı, bakış açısıyla üstünde parıltı kayar. Vitrin camı yansır, yuvalar kadifede çukur görünür, LED ışığı doluluğa göre fona vurur. Set tamamlanınca yuvalarda altın bir ışık dalgası akar. Dükkânda bazı lambalar arızalı titrer ve düzen arttıkça düzelir; asma katın önündeki "TASO DÜKKÂNI" neonu %10 düzende tam yanar. Pencerelerden gün ışığı huzmeleri düşer. Duvarlarda Kor Vadisi posterleri, girişte taso standı var.
+- **Gün döngüsü ve dış mekân:** 20 dakikada bir gün geçer: sabah, öğle, akşamüstü turuncu ışık, kısa bir gece. Güneş huzmeleri pencerelerden yönünü değiştirerek düşer, içlerinde toz süzülür. Gece içerisi aydınlık kalır; dışarıda bina pencereleri ve sokak lambaları yanar. Sokakta ağaçlar, lambalar ve banklar var.
+- **Işık:** Windows'ta açılışta dolaylı ışık (VoxelGI) pişirilir, zemin ve cam yansır. Telefon ve web'de duvar diplerinde ve vitrin altlarında yumuşak gölge var.
 - **Yerleştirme ve fizik:** Taso elden uçarak yuvasına oturur, doğruysa parlar. Fırlatılan taso yerdeki tasolara çarpar, onları iter ve üst üste yığılabilir.
 
 ### İndir

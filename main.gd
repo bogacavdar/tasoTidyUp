@@ -313,6 +313,9 @@ func _ready() -> void:
 	else:
 		tut_step = 0
 	_tut_show()
+	_build_soft_shadows()
+	if hi_gfx:
+		_build_gi.call_deferred()
 	milestone = _milestone_for(float(correct) / maxf(tasos.size(), 1.0))
 	_build_menu(not data.is_empty())
 	if skip_menu:
@@ -504,6 +507,7 @@ func _set_mms(parent: Node, count: int) -> Array:
 		var mmi := MultiMeshInstance3D.new()
 		mmi.multimesh = mm
 		mmi.material_override = taso_mats[g]
+		mmi.gi_mode = GeometryInstance3D.GI_MODE_DISABLED   # hareketli tasolar pişirilmiş ışığa girmesin
 		parent.add_child(mmi)
 		out.append(mm)
 	return out
@@ -596,14 +600,17 @@ func _build_world() -> void:
 	env.ambient_light_color = Color(1.0, 0.95, 0.88)
 	env.ambient_light_energy = 0.6
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
-	env.tonemap_mode = Environment.TONE_MAPPER_ACES
-	env.tonemap_exposure = 1.05
+	# renk ayarı: yumuşak film ton eşleme, turuncuyu bastıran hafif bir renk tablosu; netlik için bulanıklık/vinyet yok
+	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	env.tonemap_exposure = 1.12
+	env.tonemap_white = 6.0
 	env.glow_enabled = not touch_mode
 	env.glow_intensity = 0.3
 	env.glow_bloom = 0.05
 	env.adjustment_enabled = true
-	env.adjustment_saturation = 1.08
-	env.adjustment_contrast = 1.05
+	env.adjustment_saturation = 1.0
+	env.adjustment_contrast = 1.08
+	env.adjustment_color_correction = _grade_lut()
 	we.environment = env
 	add_child(we)
 	# alçak güneş: soldaki ve öndeki pencerelerden içeri ışık huzmeleri düşer
@@ -857,6 +864,14 @@ func _build_exterior() -> void:
 	dark.albedo_color = Color(0.12, 0.14, 0.17)
 	dark.roughness = 0.15
 	dark.metallic = 0.4
+	lit_window_mat = StandardMaterial3D.new()
+	lit_window_mat.albedo_color = Color(0.16, 0.15, 0.13)
+	lit_window_mat.roughness = 0.2
+	lit_window_mat.emission_enabled = true
+	lit_window_mat.emission = Color(1.0, 0.78, 0.48)
+	lit_window_mat.emission_energy_multiplier = 0.0
+	var wrng := RandomNumberGenerator.new()
+	wrng.seed = 77
 	var blocks := [
 		[Vector3(-32, 9, hd + 52), Vector3(44, 18, 12)], [Vector3(24, 12, hd + 55), Vector3(32, 24, 12)],
 		[Vector3(-hw - 26, 7, -4), Vector3(14, 14, 56)], [Vector3(hw + 28, 10, 2), Vector3(14, 20, 62)],
@@ -884,7 +899,156 @@ func _build_exterior() -> void:
 				else:
 					wpos = Vector3(c.x + signf(to_shop.x) * (sz.x / 2.0 + 0.02), wy, c.z + off)
 					wsize = Vector3(0.05, 1.8, 1.6)
-				_mesh_box(self, wsize, wpos, dark)
+				_mesh_box(self, wsize, wpos, lit_window_mat if wrng.randf() < 0.4 else dark)
+	_build_street()
+
+
+## Sokak: kaldırım kenarları, yol çizgileri, iki sıra ağaç, sokak lambaları (geceleri yanar), banklar
+func _build_street() -> void:
+	var hd := ROOM_D / 2.0
+	var rz := hd + 31.0
+	var curb := _mat(Color("a7a49c"))
+	for side in [-1.0, 1.0]:
+		_mesh_box(self, Vector3(ROOM_W + 30, 0.18, 0.3), Vector3(0, -0.05, rz + side * 7.15), curb)
+	var line := StandardMaterial3D.new()
+	line.albedo_color = Color(0.92, 0.9, 0.82)
+	line.roughness = 0.6
+	var x := -(ROOM_W + 30) / 2.0 + 2.0
+	while x < (ROOM_W + 30) / 2.0 - 2.0:
+		var dash := _mesh_box(self, Vector3(2.4, 0.01, 0.16), Vector3(x, -0.025, rz), line)
+		dash.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		x += 5.0
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 2026
+	var bark := _mat(Color("4a3626"))
+	var leaves: Array = []
+	for c in [Color("4f7a3a"), Color("5d8a42"), Color("46703a")]:
+		var lm := StandardMaterial3D.new()
+		lm.albedo_color = c
+		lm.roughness = 0.95
+		var nt := NoiseTexture2D.new()
+		nt.width = 128
+		nt.height = 128
+		nt.seamless = true
+		var fn := FastNoiseLite.new()
+		fn.frequency = 0.08
+		nt.noise = fn
+		nt.color_ramp = Gradient.new()
+		nt.color_ramp.set_color(0, Color(0.55, 0.62, 0.5))
+		nt.color_ramp.set_color(1, Color(1.1, 1.1, 1.0))
+		lm.albedo_texture = nt
+		lm.uv1_triplanar = true
+		lm.uv1_scale = Vector3(0.6, 0.6, 0.6)
+		leaves.append(lm)
+	var head_m := StandardMaterial3D.new()
+	head_m.albedo_color = Color(0.95, 0.9, 0.75)
+	head_m.emission_enabled = true
+	head_m.emission = Color(1.0, 0.82, 0.55)
+	head_m.emission_energy_multiplier = 0.2
+	street_heads.append(head_m)
+	var pole_m := _mat(Color("2b2f33"))
+	pole_m.metallic = 0.6
+	pole_m.roughness = 0.45
+	var lamp_n := 0
+	for row in [hd + 21.6, hd + 40.4]:
+		var facing := 1.0 if row < rz else -1.0
+		var tx := -60.0
+		while tx <= 60.0:
+			if absf(tx) > 4.0:
+				_tree(Vector3(tx + rng.randf_range(-1.0, 1.0), 0, row), rng, bark, leaves)
+			tx += 10.0
+		var lx := -54.0
+		while lx <= 54.0:
+			_street_lamp(Vector3(lx, 0, row + facing * 0.6), facing, pole_m, head_m, lamp_n < 10 and hi_gfx)
+			lamp_n += 1
+			lx += 18.0
+	# banklar: dükkân tarafındaki kaldırımda
+	var wood := _mat(Color("7a5536"))
+	for bx in [-10.0, 10.0, -28.0, 28.0]:
+		var b := Node3D.new()
+		b.position = Vector3(bx + 4.5, 0, hd + 21.6)
+		add_child(b)
+		_mesh_box(b, Vector3(1.8, 0.06, 0.45), Vector3(0, 0.46, 0), wood)
+		_mesh_box(b, Vector3(1.8, 0.4, 0.06), Vector3(0, 0.72, -0.2), wood)
+		for lx2 in [-0.8, 0.8]:
+			_mesh_box(b, Vector3(0.06, 0.46, 0.4), Vector3(lx2, 0.23, 0), pole_m)
+
+
+func _tree(pos: Vector3, rng: RandomNumberGenerator, bark: Material, leaves: Array) -> void:
+	var t := Node3D.new()
+	t.position = pos
+	t.rotation.y = rng.randf() * TAU
+	add_child(t)
+	var h := rng.randf_range(3.0, 4.2)
+	var trunk := CylinderMesh.new()
+	trunk.top_radius = 0.12
+	trunk.bottom_radius = 0.2
+	trunk.height = h
+	trunk.radial_segments = 10
+	var tm := MeshInstance3D.new()
+	tm.mesh = trunk
+	tm.material_override = bark
+	tm.position = Vector3(0, h / 2.0, 0)
+	t.add_child(tm)
+	var lm: Material = leaves[rng.randi() % leaves.size()]
+	for k in rng.randi_range(4, 6):
+		var sp := SphereMesh.new()
+		var r := rng.randf_range(1.0, 1.6)
+		sp.radius = r
+		sp.height = r * 1.7
+		sp.radial_segments = 14
+		sp.rings = 8
+		var mi := MeshInstance3D.new()
+		mi.mesh = sp
+		mi.material_override = lm
+		mi.position = Vector3(rng.randf_range(-0.9, 0.9), h + rng.randf_range(-0.3, 1.1), rng.randf_range(-0.9, 0.9))
+		t.add_child(mi)
+	var body := StaticBody3D.new()
+	var cs := CollisionShape3D.new()
+	var shp := CylinderShape3D.new()
+	shp.radius = 0.22
+	shp.height = h
+	cs.shape = shp
+	cs.position = Vector3(0, h / 2.0, 0)
+	body.add_child(cs)
+	t.add_child(body)
+
+
+func _street_lamp(pos: Vector3, facing: float, pole_m: Material, head_m: Material, with_light: bool) -> void:
+	var n := Node3D.new()
+	n.position = pos
+	add_child(n)
+	var pole := CylinderMesh.new()
+	pole.top_radius = 0.06
+	pole.bottom_radius = 0.09
+	pole.height = 5.0
+	pole.radial_segments = 10
+	var pm := MeshInstance3D.new()
+	pm.mesh = pole
+	pm.material_override = pole_m
+	pm.position = Vector3(0, 2.5, 0)
+	n.add_child(pm)
+	_mesh_box(n, Vector3(0.08, 0.08, 1.2), Vector3(0, 4.95, facing * 0.55), pole_m)
+	var head := _mesh_box(n, Vector3(0.36, 0.14, 0.5), Vector3(0, 4.85, facing * 1.1), head_m)
+	head.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var body := StaticBody3D.new()
+	var cs := CollisionShape3D.new()
+	var shp := CylinderShape3D.new()
+	shp.radius = 0.12
+	shp.height = 5.0
+	cs.shape = shp
+	cs.position = Vector3(0, 2.5, 0)
+	body.add_child(cs)
+	n.add_child(body)
+	if with_light:
+		var l := OmniLight3D.new()
+		l.position = Vector3(0, 4.6, facing * 1.1)
+		l.omni_range = 11.0
+		l.light_color = Color(1.0, 0.8, 0.52)
+		l.light_energy = 0.0
+		l.visible = false
+		n.add_child(l)
+		street_lights.append(l)
 
 
 func _make_sky() -> Sky:
@@ -926,6 +1090,14 @@ func _apply_gfx() -> void:
 	env.volumetric_fog_length = 48.0
 	env.volumetric_fog_gi_inject = 0.4
 	env.glow_enabled = true
+	# zemin yansımaları (deneme): ekran uzayı yansıma + yansıma probu, parke biraz daha cilalı
+	env.ssr_enabled = true
+	env.ssr_max_steps = 64
+	env.ssr_fade_in = 0.15
+	env.ssr_fade_out = 2.0
+	env.ssr_depth_tolerance = 0.2
+	if mat_floor != null:
+		mat_floor.roughness = 0.34
 	order_applied = -1.0
 
 
@@ -945,7 +1117,26 @@ func _window(center: Vector3, size: Vector2, rot: float) -> void:
 	_mesh_box(node, Vector3(t, size.y, 0.08), Vector3(size.x / 2 + t / 2, 0, 0.03), fm)
 	_mesh_box(node, Vector3(0.05, size.y, 0.05), Vector3(0, 0, 0.02), fm)
 	_mesh_box(node, Vector3(size.x, 0.05, 0.05), Vector3(0, 0, 0.02), fm)
-	_light_shaft(node, size)
+	shaft_windows.append([node, size])
+
+
+## Güneş yön değiştirdikçe huzmeleri ve içlerindeki tozu yeniden kur
+func _rebuild_shafts() -> void:
+	for n in shaft_nodes:
+		(n as Node).queue_free()
+	shaft_nodes.clear()
+	shaft_dir = -sun.transform.basis.z.normalized()
+	if _shaft_day() <= 0.01:
+		return
+	for w in shaft_windows:
+		_light_shaft(w[0], w[1])
+
+
+## Huzmelerin gün içindeki gücü: güneş alçakken ve öğleden sonra en belirgin, gece yok
+func _shaft_day() -> float:
+	if sun == null:
+		return 1.0
+	return day_f * smoothstep(0.03, 0.2, -(-sun.transform.basis.z).y)
 
 
 func _light_shaft(node: Node3D, size: Vector2) -> void:
@@ -990,6 +1181,61 @@ func _light_shaft(node: Node3D, size: Vector2) -> void:
 	mi.material_override = shaft_mat
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mi)
+	shaft_nodes.append(mi)
+	# huzmenin içinde ağır ağır süzülen toz zerrecikleri
+	if mote_mat == null:
+		mote_mat = StandardMaterial3D.new()
+		mote_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mote_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		mote_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mote_mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+		mote_mat.albedo_color = Color(1.0, 0.95, 0.82, 0.6)
+		var g := GradientTexture2D.new()
+		g.fill = GradientTexture2D.FILL_RADIAL
+		g.fill_from = Vector2(0.5, 0.5)
+		g.fill_to = Vector2(1.0, 0.5)
+		var gr := Gradient.new()
+		gr.set_color(0, Color(1, 1, 1, 1))
+		gr.set_color(1, Color(1, 1, 1, 0))
+		g.gradient = gr
+		g.width = 16
+		g.height = 16
+		mote_mat.albedo_texture = g
+	var pts := PackedVector3Array()
+	for k in 64:
+		var u := randf()
+		var v := randf()
+		var top: Vector3 = (corners[0] as Vector3).lerp(corners[1], u)
+		var bot: Vector3 = (corners[3] as Vector3).lerp(corners[2], u)
+		var p0 := top.lerp(bot, randf())
+		var p1: Vector3 = (ends[0] as Vector3).lerp(ends[1], u).lerp((ends[3] as Vector3).lerp(ends[2], u), randf())
+		pts.append(p0.lerp(p1, v * 0.85))
+	var qm := QuadMesh.new()
+	qm.size = Vector2(0.03, 0.03)
+	qm.material = mote_mat
+	var cp := CPUParticles3D.new()
+	cp.mesh = qm
+	cp.amount = 48
+	cp.lifetime = 9.0
+	cp.preprocess = 9.0
+	cp.local_coords = false
+	cp.emission_shape = CPUParticles3D.EMISSION_SHAPE_POINTS
+	cp.emission_points = pts
+	cp.direction = Vector3(0, 1, 0)
+	cp.spread = 180.0
+	cp.initial_velocity_min = 0.01
+	cp.initial_velocity_max = 0.06
+	cp.gravity = Vector3(0, -0.004, 0)
+	cp.scale_amount_min = 0.5
+	cp.scale_amount_max = 1.4
+	var cr := Curve.new()
+	cr.add_point(Vector2(0, 0))
+	cr.add_point(Vector2(0.2, 1))
+	cr.add_point(Vector2(0.8, 1))
+	cr.add_point(Vector2(1, 0))
+	cp.scale_amount_curve = cr
+	add_child(cp)
+	shaft_nodes.append(cp)
 
 
 ## Bir merdiven kolu: verilen x'te, zemin kattan (z = STAIR_Z0) asma kat kenarına (z = MEZZ_EDGE_Z) çıkar.
@@ -1488,7 +1734,9 @@ func _throw(i: int, k: int, n: int, fwd: Vector3, cb: Basis) -> void:
 	body.linear_velocity = fwd * spd + Vector3.UP * randf_range(0.8, 1.8) + right * randf_range(-0.6, 0.6) + player.velocity * 0.5
 	# takla (ters düşme şansı) + kendi ekseninde dönüş
 	body.angular_velocity = right * randf_range(-16.0, 16.0) + body.global_transform.basis.y * randf_range(-8.0, 8.0) + fwd * randf_range(-4.0, 4.0)
-	flying.append({"i": i, "body": body, "t": 0.0, "slow": 0.0})
+	var tr := _make_trail()
+	body.add_child(tr)
+	flying.append({"i": i, "body": body, "t": 0.0, "slow": 0.0, "trail": tr})
 	_pile_xf(i, body.global_transform)
 
 
@@ -1505,6 +1753,8 @@ func _update_flying(delta: float) -> void:
 		var xf := body.global_transform
 		_pile_xf(i, xf)
 		var quiet: bool = e.get("quiet", false)
+		if e.has("trail"):
+			(e["trail"] as CPUParticles3D).emitting = body.linear_velocity.length() > 1.2
 		var lv := 0.2 if quiet else 0.05
 		var av := 5.0 if quiet else 0.4
 		if body.linear_velocity.length() < lv and body.angular_velocity.length() < av:
@@ -2129,7 +2379,11 @@ func _place(i: int, g: int, n: int, from: Variant = null, delay: float = 0.0, st
 	else:
 		var fx: Transform3D = from if from != null else _hand_xf()
 		smm.set_instance_transform(int(t["num"]) - 1, fx)
-		place_anims.append({"i": i, "from": fx, "to": to, "t": -delay, "ok": ok})
+		var tr := _make_trail()
+		tr.emitting = false
+		add_child(tr)
+		tr.global_position = fx.origin
+		place_anims.append({"i": i, "from": fx, "to": to, "t": -delay, "ok": ok, "trail": tr})
 	if ok:
 		correct += 1
 		if not paid[i] and not loading:
@@ -2159,6 +2413,49 @@ func _place(i: int, g: int, n: int, from: Variant = null, delay: float = 0.0, st
 	_refresh_ring(g, n)
 
 
+## Uçan tasonun arkasında kısa, sönen sıcak bir ışık izi
+func _make_trail() -> CPUParticles3D:
+	if trail_mesh == null:
+		trail_mesh = QuadMesh.new()
+		trail_mesh.size = Vector2(0.04, 0.04)
+		var m := StandardMaterial3D.new()
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+		m.vertex_color_use_as_albedo = true
+		var g := GradientTexture2D.new()
+		g.fill = GradientTexture2D.FILL_RADIAL
+		g.fill_from = Vector2(0.5, 0.5)
+		g.fill_to = Vector2(1.0, 0.5)
+		var gr := Gradient.new()
+		gr.set_color(0, Color(1, 1, 1, 1))
+		gr.set_color(1, Color(1, 1, 1, 0))
+		g.gradient = gr
+		g.width = 32
+		g.height = 32
+		m.albedo_texture = g
+		trail_mesh.material = m
+	var p := CPUParticles3D.new()
+	p.mesh = trail_mesh
+	p.amount = 40
+	p.lifetime = 0.3
+	p.local_coords = false
+	p.gravity = Vector3.ZERO
+	p.initial_velocity_min = 0.0
+	p.initial_velocity_max = 0.0
+	var cr := Curve.new()
+	cr.add_point(Vector2(0, 1))
+	cr.add_point(Vector2(1, 0))
+	p.scale_amount_curve = cr
+	var cg := Gradient.new()
+	cg.set_color(0, Color(1.0, 0.85, 0.5, 0.4))
+	cg.set_color(1, Color(1.0, 0.6, 0.3, 0.0))
+	p.color_ramp = cg
+	p.emitting = true
+	return p
+
+
 func _streak_mult() -> int:
 	return 1 + mini(floori(streak / 5.0), 2)
 
@@ -2177,7 +2474,13 @@ func _update_place_anims(delta: float) -> void:
 		var xf := from.interpolate_with(to, e)
 		xf.origin += to.basis.y * 0.12 * sin(PI * u)
 		smm.set_instance_transform(int(t["num"]) - 1, xf)
+		var tr: CPUParticles3D = a["trail"]
+		if is_instance_valid(tr):
+			tr.global_position = xf.origin
+			tr.emitting = u > 0.0 and u < 0.92
 		if u >= 1.0:
+			if is_instance_valid(tr):
+				get_tree().create_timer(0.4).timeout.connect(tr.queue_free)
 			smm.set_instance_transform(int(t["num"]) - 1, to)
 			place_anims.remove_at(k)
 			if a["ok"]:
@@ -2190,6 +2493,9 @@ func _update_place_anims(delta: float) -> void:
 func _cancel_anim(i: int) -> void:
 	for k in range(place_anims.size() - 1, -1, -1):
 		if int(place_anims[k]["i"]) == i:
+			var tr: CPUParticles3D = place_anims[k]["trail"]
+			if is_instance_valid(tr):
+				tr.queue_free()
 			place_anims.remove_at(k)
 
 
@@ -3589,31 +3895,221 @@ func _update_order(delta: float) -> void:
 		order_applied = order_vis
 		var e := pow(order_vis, 0.6)
 		if hi_gfx and adv_light:
-			env.ambient_light_energy = lerpf(0.3, 0.5, e)
+			base_amb = lerpf(0.3, 0.5, e)
 		else:
-			env.ambient_light_energy = lerpf(0.36, 0.62, e)
-		env.adjustment_saturation = lerpf(0.72, 1.04, e)
+			base_amb = lerpf(0.36, 0.62, e)
+		env.adjustment_saturation = lerpf(0.7, 0.98, e)
 		env.adjustment_brightness = lerpf(0.88, 1.0, e)
-		sun.light_energy = lerpf(0.8, 1.2, e) if hi_gfx else lerpf(0.3, 0.6, e)
+		base_sun = lerpf(0.8, 1.2, e) if hi_gfx else lerpf(0.3, 0.6, e)
 		var lc := Color(1.0, 0.82, 0.62).lerp(Color(1.0, 0.94, 0.84), e)
 		if lamp_base.size() != lamps.size():
 			_init_lamp_faults()
 		for k in lamps.size():
 			var l: OmniLight3D = lamps[k]
-			lamp_base[k] = lerpf(1.4, 2.2, e) if hi_gfx else lerpf(0.95, 1.55, e)
+			lamp_base[k] = (lerpf(1.4, 2.2, e) if hi_gfx else lerpf(0.95, 1.55, e)) * lerpf(1.4, 1.0, day_f)
 			l.light_energy = lamp_base[k]
 			l.light_color = lc
 		if shaft_mat != null:
-			shaft_mat.set_shader_parameter("strength", lerpf(0.11, 0.2, e))
+			shaft_mat.set_shader_parameter("strength", lerpf(0.11, 0.2, e) * _shaft_day())
+		if mote_mat != null:
+			mote_mat.albedo_color.a = lerpf(0.9, 0.25, e) * _shaft_day()
 		dust_mat.albedo_color.a = lerpf(0.65, 0.05, e)
 		dirt_mat.albedo_color.a = lerpf(0.75, 0.0, e)
 	_update_lamps(delta, p)
+	_update_day(delta)
 	var m := _milestone_for(p)
 	if m > milestone and message_time < 0.5:
 		milestone = m
 		_say("Dükkân aydınlanıyor: %%%d düzenli" % roundi(float(MILESTONES[m - 1]) * 100.0))
 	elif m < milestone:
 		milestone = m
+
+
+## Windows (Forward+): oyun açılırken dolaylı ışığı (VoxelGI) bir kez pişirir; yansıma probu cam ve zemine iç mekânı yansıtır
+func _build_gi() -> void:
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var size := Vector3(ROOM_W + 1.0, BUILD_H + 0.6, ROOM_D + 1.0)
+	var gi := VoxelGI.new()
+	gi.subdiv = VoxelGI.SUBDIV_256
+	gi.size = size
+	gi.position = Vector3(0, BUILD_H / 2.0, 0)
+	var gd := VoxelGIData.new()
+	gi.data = gd
+	add_child(gi)
+	gi.bake()
+	gd = gi.data
+	if gd != null:
+		gd.energy = 1.1
+		gd.propagation = 0.6
+		gd.bias = 1.5
+		gd.normal_bias = 0.0
+	var probe := ReflectionProbe.new()
+	probe.size = size
+	probe.position = Vector3(0, BUILD_H / 2.0, 0)
+	probe.origin_offset = Vector3(0, -BUILD_H / 2.0 + 1.7, 0)
+	probe.box_projection = true
+	probe.interior = true
+	probe.update_mode = ReflectionProbe.UPDATE_ONCE
+	probe.ambient_mode = ReflectionProbe.AMBIENT_DISABLED
+	add_child(probe)
+
+
+## Telefon ve web: duvar diplerine ve vitrinlerin altına yumuşak sahte gölge (gerçek ortam gölgesi yalnızca Windows'ta)
+func _build_soft_shadows() -> void:
+	if hi_gfx:
+		return
+	var g := GradientTexture2D.new()
+	g.width = 4
+	g.height = 64
+	g.fill_from = Vector2(0.5, 1.0)
+	g.fill_to = Vector2(0.5, 0.0)
+	var gr := Gradient.new()
+	gr.set_color(0, Color(0, 0, 0, 1))
+	gr.set_color(1, Color(0, 0, 0, 0))
+	gr.add_point(0.3, Color(0, 0, 0, 0.45))
+	g.gradient = gr
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.albedo_texture = g
+	m.albedo_color = Color(1, 1, 1, 0.32)
+	m.disable_receive_shadows = true
+	var hw := ROOM_W / 2.0
+	var hd := ROOM_D / 2.0
+	# [merkez, normal (içe), uzunluk]
+	var walls := [[Vector3(0, 0, -hd), Vector3(0, 0, 1), ROOM_W], [Vector3(0, 0, hd), Vector3(0, 0, -1), ROOM_W],
+		[Vector3(-hw, 0, 0), Vector3(1, 0, 0), ROOM_D], [Vector3(hw, 0, 0), Vector3(-1, 0, 0), ROOM_D]]
+	for w in walls:
+		var c: Vector3 = w[0]
+		var nrm: Vector3 = w[1]
+		var l: float = w[2]
+		var yaw := atan2(nrm.x, nrm.z)
+		# duvar üstünde dikey şerit
+		var q := QuadMesh.new()
+		q.size = Vector2(l, 1.1)
+		var mi := MeshInstance3D.new()
+		mi.mesh = q
+		mi.material_override = m
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mi.position = c + nrm * 0.17 + Vector3(0, 0.55, 0)
+		mi.rotation.y = yaw
+		add_child(mi)
+		# zeminde duvardan uzaklaştıkça sönen şerit
+		var q2 := QuadMesh.new()
+		q2.size = Vector2(l, 1.0)
+		var mf := MeshInstance3D.new()
+		mf.mesh = q2
+		mf.material_override = m
+		mf.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mf.position = c + nrm * (0.17 + 0.5) + Vector3(0, 0.012, 0)
+		mf.rotation = Vector3(-PI / 2, yaw, 0)
+		add_child(mf)
+	# vitrinlerin altına temas gölgesi
+	var rg := GradientTexture2D.new()
+	rg.fill = GradientTexture2D.FILL_RADIAL
+	rg.fill_from = Vector2(0.5, 0.5)
+	rg.fill_to = Vector2(1.0, 0.5)
+	var rgr := Gradient.new()
+	rgr.set_color(0, Color(0, 0, 0, 1))
+	rgr.set_color(1, Color(0, 0, 0, 0))
+	rg.gradient = rgr
+	var rm := StandardMaterial3D.new()
+	rm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	rm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	rm.albedo_texture = rg
+	rm.albedo_color = Color(1, 1, 1, 0.45)
+	for sh in shelves:
+		var q3 := QuadMesh.new()
+		q3.size = Vector2(3.4, 1.8)
+		var ms := MeshInstance3D.new()
+		ms.mesh = q3
+		ms.material_override = rm
+		ms.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var b: Node3D = sh
+		ms.position = Vector3(b.global_position.x, 0.011, b.global_position.z)
+		ms.rotation = Vector3(-PI / 2, b.rotation.y, 0)
+		add_child(ms)
+
+
+## Gün döngüsü: güneşin yeri, rengi ve gücü; gökyüzü; dışarıdaki ışıklar. İçerisi gece de aydınlık kalır.
+func _update_day(delta: float) -> void:
+	day_t = fmod(day_t + delta / DAY_LEN, 1.0)
+	# döngünün %80'i gündüz (06:00-20:00), %20'si gece
+	var h: float
+	if day_t < 0.8:
+		h = 6.0 + day_t / 0.8 * 14.0
+	else:
+		h = 20.0 + (day_t - 0.8) / 0.2 * 10.0
+	var dayness := smoothstep(5.6, 7.0, h) * (1.0 - smoothstep(19.0, 20.4, h))
+	day_f = dayness
+	var u := clampf((h - 6.0) / 14.0, 0.0, 1.0)
+	var elev := sin(u * PI) * 58.0
+	var yaw := lerpf(-150.0, 20.0, u)
+	var low := 1.0 - smoothstep(4.0, 28.0, elev)
+	var sun_col := Color(1.0, 0.95, 0.88).lerp(Color(1.0, 0.62, 0.36), low)
+	if dayness > 0.02:
+		sun.rotation_degrees = Vector3(-maxf(elev, 3.0), yaw, 0)
+		sun.light_color = sun_col
+		sun.light_energy = base_sun * dayness * lerpf(1.0, 0.75, low)
+	else:
+		# gece: soluk mavi ay ışığı
+		sun.rotation_degrees = Vector3(-40, 60, 0)
+		sun.light_color = Color(0.6, 0.7, 1.0)
+		sun.light_energy = base_sun * 0.25
+	env.background_energy_multiplier = lerpf(0.1, 1.0, dayness) * lerpf(1.0, 0.8, low * dayness)
+	# gece içerisi kararmasın: güneşin eksiğini sıcak ortam ışığı ve lambalar kapatır
+	env.ambient_light_color = Color(0.9, 0.88, 0.92).lerp(Color(1.0, 0.95, 0.88), dayness)
+	env.ambient_light_energy = base_amb + (1.0 - dayness) * (0.22 if hi_gfx else 0.4)
+	var night := 1.0 - dayness
+	if lit_window_mat != null:
+		lit_window_mat.emission_energy_multiplier = 1.6 * night
+	for l in street_lights:
+		(l as OmniLight3D).light_energy = 2.2 * night
+		(l as OmniLight3D).visible = night > 0.05
+	for hm in street_heads:
+		(hm as StandardMaterial3D).emission_energy_multiplier = 0.2 + 3.0 * night
+	if neon_light != null:
+		neon_light.omni_range = lerpf(10.0, 7.0, dayness)
+	# huzmeler güneşi izler
+	shaft_timer -= delta
+	var d := -sun.transform.basis.z.normalized()
+	if shaft_timer <= 0.0 and (d.distance_to(shaft_dir) > 0.04 or (shaft_nodes.is_empty() != (_shaft_day() <= 0.01))):
+		shaft_timer = 2.0
+		_rebuild_shafts()
+	if shaft_mat != null:
+		shaft_mat.set_shader_parameter("strength", lerpf(0.11, 0.2, pow(order_vis, 0.6)) * _shaft_day())
+	if mote_mat != null:
+		mote_mat.albedo_color.a = lerpf(0.9, 0.25, pow(order_vis, 0.6)) * _shaft_day()
+	day_refresh -= delta
+	if day_refresh <= 0.0:
+		day_refresh = 3.0
+		order_applied = -1.0  # lambaların gece güçlenmesi için düzen değerlerini tazele
+
+
+## Renk tablosu (3B LUT): turuncu-kırmızıyı biraz bastırır, gölgeleri hafif serinletir, açık tonları temiz tutar
+func _grade_lut() -> Texture3D:
+	var n := 17
+	var imgs: Array[Image] = []
+	for b in n:
+		var img := Image.create(n, n, false, Image.FORMAT_RGB8)
+		for g in n:
+			for r in n:
+				var c := Color(r / float(n - 1), g / float(n - 1), b / float(n - 1))
+				var lum := c.r * 0.299 + c.g * 0.587 + c.b * 0.114
+				# turuncu/kırmızı tonlarda doygunluğu azalt
+				var orange := clampf((c.r - c.b) * 1.6, 0.0, 1.0)
+				var sat := 1.0 - 0.22 * orange
+				c = Color(lerpf(lum, c.r, sat), lerpf(lum, c.g, sat), lerpf(lum, c.b, sat))
+				# koyu tonlar hafif serin, açık tonlar nötr
+				var sh := 1.0 - smoothstep(0.0, 0.45, lum)
+				c.b += 0.025 * sh
+				c.r -= 0.012 * sh
+				img.set_pixel(r, g, Color(clampf(c.r, 0, 1), clampf(c.g, 0, 1), clampf(c.b, 0, 1)))
+		imgs.append(img)
+	var t := ImageTexture3D.new()
+	t.create(Image.FORMAT_RGB8, n, n, n, false, imgs)
+	return t
 
 
 ## Her üç lambadan biri arızalı başlar ve titrer; düzen arttıkça sırayla düzelir.
@@ -4047,6 +4543,22 @@ var neon_light: OmniLight3D
 var neon_dim := 0.0
 var neon_timer := 0.0
 var shaft_mat: ShaderMaterial
+# Gün döngüsü: 20 dakikada bir gün; gece kısa sürer
+const DAY_LEN := 1200.0
+var day_t := 0.16                       # 0..1 (0 = sabah 06:00)
+var day_f := 1.0                        # gündüzlük (1 gündüz, 0 gece)
+var shaft_windows: Array = []           # [pencere düğümü, boyut]
+var shaft_nodes: Array = []
+var shaft_timer := 0.0
+var shaft_dir := Vector3.ZERO
+var mote_mat: StandardMaterial3D
+var trail_mesh: QuadMesh
+var base_amb := 0.6                     # düzenin belirlediği değerler; gün döngüsü bunların üstüne uygulanır
+var base_sun := 0.55
+var lit_window_mat: StandardMaterial3D
+var street_lights: Array = []
+var street_heads: Array = []
+var day_refresh := 0.0
 const SHAFT_SHADER := """shader_type spatial;
 render_mode unshaded, blend_add, depth_draw_never, cull_disabled, shadows_disabled;
 // pencereden düşen gün ışığı huzmesi: pencere tarafında güçlü, zemine doğru söner, içinde yavaş kıpırdayan toz
