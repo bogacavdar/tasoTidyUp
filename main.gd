@@ -110,7 +110,7 @@ const COIN_SET := 25
 # ---------------- Durum ----------------
 var set_count := SETS.size()        # vitrin sayısı (34)
 ## Yerde olan setler: şimdilik yalnızca yeni çizimli Kor Vadisi. Diğer vitrinler boş bekler.
-const ACTIVE_SETS := 1
+const ACTIVE_SETS := 2
 var set_colors: Array[Color] = []
 var tasos: Array = []                 # Dictionary: grp, num
 var pile_xf: Array[Transform3D] = []  # yığındaki son konum
@@ -1601,6 +1601,25 @@ func _spawn_tasos(data: Dictionary) -> void:
 			if ip:
 				_grid_add(i)
 				pile_count += 1
+		# kayıtta olmayan (sonradan eklenen) setlerin tasoları
+		var have := {}
+		for t in tasos:
+			have[int(t["grp"])] = true
+		var extra: Array = []
+		for g in ACTIVE_SETS:
+			if not have.has(g):
+				for n in NUMBERS_PER_SET:
+					extra.append(Vector2i(g, n + 1))
+		extra.shuffle()
+		for p in extra:
+			var i := tasos.size()
+			tasos.append({"grp": p.x, "num": p.y})
+			var pos := _random_floor_pos()
+			pile_xf.append(Transform3D(Basis(Vector3.UP, randf() * TAU) * Basis(Vector3.RIGHT, randf_range(-0.12, 0.12)), pos))
+			in_pile.append(true)
+			paid.append(false)
+			_grid_add(i)
+			pile_count += 1
 		return
 	var pairs: Array = []
 	for g in ACTIVE_SETS:
@@ -3137,7 +3156,8 @@ func _read_save() -> Dictionary:
 	if int(d.get("sets", 0)) != set_count or int(d.get("per_set", 0)) != NUMBERS_PER_SET:
 		return {}
 	var list: Array = d.get("tasos", [])
-	if list.size() != ACTIVE_SETS * NUMBERS_PER_SET:
+	# yeni set eklendiğinde eski kayıt geçerli kalır: eksik setlerin tasoları yüklemede yere saçılır
+	if list.is_empty() or list.size() > ACTIVE_SETS * NUMBERS_PER_SET or list.size() % NUMBERS_PER_SET != 0:
 		return {}
 	return d
 
@@ -4861,7 +4881,7 @@ func _shop_decor() -> void:
 			bx.add_child(lb)
 			k += 1
 	var sign := Label3D.new()
-	sign.text = "YENİ SET\nKor Vadisi"
+	sign.text = "YENİ SET\nDerin Su"
 	sign.font_size = 48
 	sign.pixel_size = 0.0035
 	sign.outline_size = 8
