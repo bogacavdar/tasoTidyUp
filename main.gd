@@ -201,6 +201,10 @@ var joy_knob: Panel
 
 # Kayıt ve menü
 static var skip_menu := false        # "Yeni Oyun" sonrası menüyü atlayıp doğrudan başla
+static var from_title := false       # ana ekrandan yükleme ekranıyla açıldı: hazır olunca doğrudan oyuna gir
+signal boot_progress(f: float, text: String)
+signal boot_done
+var booted := false
 var mouse_sens := 0.0025
 var zooming := false                   # sağ tık / Zoom butonu basılıyken yakınlaştır
 const ZOOM_FOV := 28.0
@@ -281,6 +285,10 @@ var hud_center: Label
 
 
 func _ready() -> void:
+	# kurulum birkaç kareye bölünür: yükleme ekranı ilerlemeyi gösterir, bitmeden oyun döngüsü çalışmaz
+	set_process(false)
+	set_physics_process(false)
+	set_process_unhandled_input(false)
 	randomize()
 	touch_mode = OS.has_feature("mobile") or OS.has_feature("web_android") or OS.has_feature("web_ios")
 	# Forward+ / Mobile motorlarında RenderingDevice var; Compatibility (web, telefon) motorunda yok
@@ -291,7 +299,9 @@ func _ready() -> void:
 	_make_taso_material()
 	_make_env_materials()
 	_load_settings()
+	await _boot_step(0.08, "Dükkân kuruluyor")
 	_build_world()
+	await _boot_step(0.4, "Oyuncu ve tasolar hazırlanıyor")
 	_build_player()
 	var data := _read_save()
 	for k in set_count * (NUMBERS_PER_SET / 3):
@@ -302,10 +312,12 @@ func _ready() -> void:
 	for i in tasos.size():
 		idx_of_uid[_uid(tasos[i])] = i
 	_build_pile()
+	await _boot_step(0.55, "Arayüz ve sesler")
 	_build_hud()
 	_build_sounds()
 	_build_ability_visuals()
 	_build_atmosphere()
+	await _boot_step(0.65, "Kayıt yükleniyor")
 	if not data.is_empty():
 		_apply_save(data)
 		_free_blocked_tasos()
@@ -314,15 +326,51 @@ func _ready() -> void:
 		tut_step = 0
 	_tut_show()
 	_build_soft_shadows()
-	if hi_gfx:
-		_build_gi.call_deferred()
 	milestone = _milestone_for(float(correct) / maxf(tasos.size(), 1.0))
 	_build_menu(not data.is_empty())
-	if skip_menu:
+	await _boot_step(0.72, "Işık ve gölgeler hazırlanıyor")
+	_update_order(0.0)
+	_rebuild_shafts()
+	await _warmup()
+	booted = true
+	set_process(true)
+	set_physics_process(true)
+	set_process_unhandled_input(true)
+	if from_title or skip_menu:
+		from_title = false
 		skip_menu = false
 		_close_menu()
 	else:
 		_open_menu()
+	boot_done.emit()
+
+
+func _boot_step(f: float, text: String) -> void:
+	boot_progress.emit(f, text)
+	await get_tree().process_frame
+
+
+## Shader ısınması: kamerayı her yöne çevirip efektleri bir kez gösterir; böylece shader'lar oyun sırasında
+## değil yükleme ekranında derlenir (ilk görüldüklerindeki takılmalar olmaz)
+func _warmup() -> void:
+	var p0 := player.rotation
+	var c0 := cam.rotation
+	var front := cam.global_position - cam.global_transform.basis.z * 1.2
+	_sparkle(front, Color("ffd36b"))
+	var tr := _make_trail()
+	add_child(tr)
+	tr.global_position = front
+	var steps := 12
+	for k in steps:
+		player.rotation.y = p0.y + TAU * k / steps
+		cam.rotation.x = [-0.15, 0.35, -0.5][k % 3]
+		tr.global_position = cam.global_position - cam.global_transform.basis.z * 1.2
+		boot_progress.emit(0.75 + 0.25 * k / steps, "Görüntü hazırlanıyor")
+		await get_tree().process_frame
+		await get_tree().process_frame
+	player.rotation = p0
+	cam.rotation = c0
+	tr.queue_free()
 
 
 ## Gelişim ağacı: dal 0 taşıma/hareket, 1 görüş, 2 büyüler. req: önce açılması gereken düğüm.
@@ -600,10 +648,15 @@ func _build_world() -> void:
 	env.ambient_light_color = Color(1.0, 0.95, 0.88)
 	env.ambient_light_energy = 0.6
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
-	# renk ayarı: yumuşak film ton eşleme, turuncuyu bastıran hafif bir renk tablosu; netlik için bulanıklık/vinyet yok
-	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-	env.tonemap_exposure = 1.12
-	env.tonemap_white = 6.0
+	# renk ayarı: turuncuyu bastıran hafif bir renk tablosu; netlik için bulanıklık/vinyet yok.
+	# Windows (Forward+) ACES ile daha aydınlık durur; telefon/web'de yumuşak film ton eşleme
+	if hi_gfx:
+		env.tonemap_mode = Environment.TONE_MAPPER_ACES
+		env.tonemap_exposure = 1.1
+	else:
+		env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+		env.tonemap_exposure = 1.12
+		env.tonemap_white = 6.0
 	env.glow_enabled = not touch_mode
 	env.glow_intensity = 0.3
 	env.glow_bloom = 0.05
@@ -1097,7 +1150,7 @@ func _apply_gfx() -> void:
 	env.ssr_fade_out = 2.0
 	env.ssr_depth_tolerance = 0.2
 	if mat_floor != null:
-		mat_floor.roughness = 0.34
+		mat_floor.roughness = 0.42
 	order_applied = -1.0
 
 
@@ -1122,14 +1175,14 @@ func _window(center: Vector3, size: Vector2, rot: float) -> void:
 
 ## Güneş yön değiştirdikçe huzmeleri ve içlerindeki tozu yeniden kur
 func _rebuild_shafts() -> void:
-	for n in shaft_nodes:
-		(n as Node).queue_free()
-	shaft_nodes.clear()
 	shaft_dir = -sun.transform.basis.z.normalized()
-	if _shaft_day() <= 0.01:
-		return
+	var on := _shaft_day() > 0.01
 	for w in shaft_windows:
-		_light_shaft(w[0], w[1])
+		if on:
+			_light_shaft(w)
+		elif w.size() > 2:
+			(w[2] as Node3D).visible = false
+			(w[3] as Node3D).visible = false
 
 
 ## Huzmelerin gün içindeki gücü: güneş alçakken ve öğleden sonra en belirgin, gece yok
@@ -1139,12 +1192,18 @@ func _shaft_day() -> float:
 	return day_f * smoothstep(0.03, 0.2, -(-sun.transform.basis.z).y)
 
 
-func _light_shaft(node: Node3D, size: Vector2) -> void:
+## w: [pencere, boyut, (huzme ağı, toz)] — ilk çağrıda düğümler kurulur, sonra yalnızca güncellenir
+func _light_shaft(w: Array) -> void:
 	if sun == null:
 		return
+	var node: Node3D = w[0]
+	var size: Vector2 = w[1]
 	var dir := -sun.transform.basis.z.normalized()
 	var inward := node.transform.basis.z.normalized()
 	if dir.dot(inward) < 0.15 or dir.y > -0.05:
+		if w.size() > 2:
+			(w[2] as Node3D).visible = false
+			(w[3] as Node3D).visible = false
 		return
 	if shaft_mat == null:
 		shaft_mat = ShaderMaterial.new()
@@ -1176,6 +1235,22 @@ func _light_shaft(node: Node3D, size: Vector2) -> void:
 			st.set_uv(Vector2(v[1], v[2]))
 			st.add_vertex(v[0])
 	st.generate_normals()
+	var pts := PackedVector3Array()
+	for k in 64:
+		var u := randf()
+		var v := randf()
+		var top: Vector3 = (corners[0] as Vector3).lerp(corners[1], u)
+		var bot: Vector3 = (corners[3] as Vector3).lerp(corners[2], u)
+		var p0 := top.lerp(bot, randf())
+		var p1: Vector3 = (ends[0] as Vector3).lerp(ends[1], u).lerp((ends[3] as Vector3).lerp(ends[2], u), randf())
+		pts.append(p0.lerp(p1, v * 0.85))
+	if w.size() > 2:
+		# var olan huzmeyi güncelle: yeni düğüm, yeni ön hesaplama yok
+		(w[2] as MeshInstance3D).mesh = st.commit()
+		(w[2] as Node3D).visible = true
+		(w[3] as CPUParticles3D).emission_points = pts
+		(w[3] as Node3D).visible = true
+		return
 	var mi := MeshInstance3D.new()
 	mi.mesh = st.commit()
 	mi.material_override = shaft_mat
@@ -1201,15 +1276,6 @@ func _light_shaft(node: Node3D, size: Vector2) -> void:
 		g.width = 16
 		g.height = 16
 		mote_mat.albedo_texture = g
-	var pts := PackedVector3Array()
-	for k in 64:
-		var u := randf()
-		var v := randf()
-		var top: Vector3 = (corners[0] as Vector3).lerp(corners[1], u)
-		var bot: Vector3 = (corners[3] as Vector3).lerp(corners[2], u)
-		var p0 := top.lerp(bot, randf())
-		var p1: Vector3 = (ends[0] as Vector3).lerp(ends[1], u).lerp((ends[3] as Vector3).lerp(ends[2], u), randf())
-		pts.append(p0.lerp(p1, v * 0.85))
 	var qm := QuadMesh.new()
 	qm.size = Vector2(0.03, 0.03)
 	qm.material = mote_mat
@@ -1236,6 +1302,8 @@ func _light_shaft(node: Node3D, size: Vector2) -> void:
 	cp.scale_amount_curve = cr
 	add_child(cp)
 	shaft_nodes.append(cp)
+	w.append(mi)
+	w.append(cp)
 
 
 ## Bir merdiven kolu: verilen x'te, zemin kattan (z = STAIR_Z0) asma kat kenarına (z = MEZZ_EDGE_Z) çıkar.
@@ -3476,11 +3544,11 @@ func _on_new_game() -> void:
 		new_confirm = true
 		btn_new.text = "Emin misin? Tüm ilerleme silinir"
 		return
-	if FileAccess.file_exists(SAVE_PATH):
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
-	skip_menu = true
+	# yeni oyun da ana ekranın yükleme ekranıyla açılır (takılmasın diye)
 	get_tree().paused = false
-	get_tree().reload_current_scene()
+	var ms: Script = load("res://menu.gd")
+	ms.set("auto_new", true)
+	get_tree().change_scene_to_file("res://menu.tscn")
 
 
 # ---------------- HUD ----------------
@@ -3896,6 +3964,9 @@ func _update_order(delta: float) -> void:
 		var e := pow(order_vis, 0.6)
 		if hi_gfx and adv_light:
 			base_amb = lerpf(0.3, 0.5, e)
+		elif hi_gfx:
+			# Forward+'ta güneş gölgesi içeriyi tamamen kapatır; ortam ışığı daha güçlü olmalı
+			base_amb = lerpf(0.5, 0.75, e)
 		else:
 			base_amb = lerpf(0.36, 0.62, e)
 		env.adjustment_saturation = lerpf(0.7, 0.98, e)
@@ -3906,7 +3977,7 @@ func _update_order(delta: float) -> void:
 			_init_lamp_faults()
 		for k in lamps.size():
 			var l: OmniLight3D = lamps[k]
-			lamp_base[k] = (lerpf(1.4, 2.2, e) if hi_gfx else lerpf(0.95, 1.55, e)) * lerpf(1.4, 1.0, day_f)
+			lamp_base[k] = (lerpf(1.4, 2.2, e) if hi_gfx else lerpf(0.95, 1.55, e)) 
 			l.light_energy = lamp_base[k]
 			l.light_color = lc
 		if shaft_mat != null:
@@ -3923,36 +3994,6 @@ func _update_order(delta: float) -> void:
 		_say("Dükkân aydınlanıyor: %%%d düzenli" % roundi(float(MILESTONES[m - 1]) * 100.0))
 	elif m < milestone:
 		milestone = m
-
-
-## Windows (Forward+): oyun açılırken dolaylı ışığı (VoxelGI) bir kez pişirir; yansıma probu cam ve zemine iç mekânı yansıtır
-func _build_gi() -> void:
-	await get_tree().process_frame
-	await get_tree().process_frame
-	var size := Vector3(ROOM_W + 1.0, BUILD_H + 0.6, ROOM_D + 1.0)
-	var gi := VoxelGI.new()
-	gi.subdiv = VoxelGI.SUBDIV_256
-	gi.size = size
-	gi.position = Vector3(0, BUILD_H / 2.0, 0)
-	var gd := VoxelGIData.new()
-	gi.data = gd
-	add_child(gi)
-	gi.bake()
-	gd = gi.data
-	if gd != null:
-		gd.energy = 1.1
-		gd.propagation = 0.6
-		gd.bias = 1.5
-		gd.normal_bias = 0.0
-	var probe := ReflectionProbe.new()
-	probe.size = size
-	probe.position = Vector3(0, BUILD_H / 2.0, 0)
-	probe.origin_offset = Vector3(0, -BUILD_H / 2.0 + 1.7, 0)
-	probe.box_projection = true
-	probe.interior = true
-	probe.update_mode = ReflectionProbe.UPDATE_ONCE
-	probe.ambient_mode = ReflectionProbe.AMBIENT_DISABLED
-	add_child(probe)
 
 
 ## Telefon ve web: duvar diplerine ve vitrinlerin altına yumuşak sahte gölge (gerçek ortam gölgesi yalnızca Windows'ta)
@@ -4074,17 +4115,15 @@ func _update_day(delta: float) -> void:
 	# huzmeler güneşi izler
 	shaft_timer -= delta
 	var d := -sun.transform.basis.z.normalized()
-	if shaft_timer <= 0.0 and (d.distance_to(shaft_dir) > 0.04 or (shaft_nodes.is_empty() != (_shaft_day() <= 0.01))):
+	if shaft_timer <= 0.0 and (d.distance_to(shaft_dir) > 0.04 or ((_shaft_day() > 0.01) != shaft_on)):
+		shaft_on = _shaft_day() > 0.01
 		shaft_timer = 2.0
 		_rebuild_shafts()
 	if shaft_mat != null:
 		shaft_mat.set_shader_parameter("strength", lerpf(0.11, 0.2, pow(order_vis, 0.6)) * _shaft_day())
 	if mote_mat != null:
 		mote_mat.albedo_color.a = lerpf(0.9, 0.25, pow(order_vis, 0.6)) * _shaft_day()
-	day_refresh -= delta
-	if day_refresh <= 0.0:
-		day_refresh = 3.0
-		order_applied = -1.0  # lambaların gece güçlenmesi için düzen değerlerini tazele
+
 
 
 ## Renk tablosu (3B LUT): turuncu-kırmızıyı biraz bastırır, gölgeleri hafif serinletir, açık tonları temiz tutar
@@ -4131,18 +4170,17 @@ func _init_lamp_faults() -> void:
 func _update_lamps(delta: float, p: float) -> void:
 	if lamp_base.size() != lamps.size():
 		_init_lamp_faults()
+	var nightm := lerpf(1.4, 1.0, day_f)   # gece lambalar daha güçlü
 	for k in lamps.size():
-		if float(lamp_fix[k]) < 0.0:
-			continue
 		var l: OmniLight3D = lamps[k]
-		if p >= float(lamp_fix[k]):
-			l.light_energy = lamp_base[k]
+		if float(lamp_fix[k]) < 0.0 or p >= float(lamp_fix[k]):
+			l.light_energy = float(lamp_base[k]) * nightm
 			continue
 		# arızalı: çoğunlukla yanar, ara sıra kısa süre söner
 		lamp_dim[k] = float(lamp_dim[k]) - delta
 		if float(lamp_dim[k]) <= -randf_range(0.4, 3.5):
 			lamp_dim[k] = randf_range(0.05, 0.35)
-		l.light_energy = float(lamp_base[k]) * (0.25 if float(lamp_dim[k]) > 0.0 else 1.0)
+		l.light_energy = float(lamp_base[k]) * nightm * (0.25 if float(lamp_dim[k]) > 0.0 else 1.0)
 	# neon tabela: başta sönük ve kesik kesik, %10 düzende tam yanar
 	if neon_label == null:
 		return
@@ -4558,7 +4596,7 @@ var base_sun := 0.55
 var lit_window_mat: StandardMaterial3D
 var street_lights: Array = []
 var street_heads: Array = []
-var day_refresh := 0.0
+var shaft_on := true
 const SHAFT_SHADER := """shader_type spatial;
 render_mode unshaded, blend_add, depth_draw_never, cull_disabled, shadows_disabled;
 // pencereden düşen gün ışığı huzmesi: pencere tarafında güçlü, zemine doğru söner, içinde yavaş kıpırdayan toz
