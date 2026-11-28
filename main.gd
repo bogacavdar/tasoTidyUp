@@ -110,7 +110,7 @@ const COIN_SET := 25
 # ---------------- Durum ----------------
 var set_count := SETS.size()        # vitrin sayısı (34)
 ## Yerde olan setler: şimdilik yalnızca yeni çizimli Kor Vadisi. Diğer vitrinler boş bekler.
-const ACTIVE_SETS := 3
+const ACTIVE_SETS := 4
 var set_colors: Array[Color] = []
 var tasos: Array = []                 # Dictionary: grp, num
 var pile_xf: Array[Transform3D] = []  # yığındaki son konum
@@ -4881,7 +4881,7 @@ func _shop_decor() -> void:
 			bx.add_child(lb)
 			k += 1
 	var sign := Label3D.new()
-	sign.text = "YENİ SET\nTaş Kök"
+	sign.text = "YENİ SET\nGece Rüzgârı"
 	sign.font_size = 48
 	sign.pixel_size = 0.0035
 	sign.outline_size = 8
